@@ -1,0 +1,42 @@
+{
+  "id": "test-001",
+  "label": "测试数据",
+  "updatedAt": "2026-06-12T12:00:00.000Z",
+  "inputs": {
+    "companyName": "Quyang Sculpture Co., Ltd.",
+    "projectName": "迪拜客户",
+    "tradeTerm": "CFR",
+    "containerType": "20GP 20尺普通干货集装箱",
+    "destination": "Dubai",
+    "validUntil": "6月21日",
+    "exchangeRate": 6.7750677507,
+    "quoteUsd": 35500,
+    "targetProfit": 15,
+    "selectedScheme": "A",
+    "notes": "目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用默认不包含在CFR报价内。"
+  },
+  "schemes": ["A", "B"],
+  "cargo": [
+    { "name": "大理石马", "spec": "实际出货尺寸", "length": 2.1, "height": 2.1, "width": 0.5, "weight": 2200, "qty": 5, "unitPrice": 20000, "taxRate": 13 },
+    { "name": "不锈钢猎鹰", "spec": "实际出货尺寸", "length": 3, "height": 2, "width": 0.8, "weight": 500, "qty": 1, "unitPrice": 40000, "taxRate": 0 }
+  ],
+  "freight": [
+    { "scheme": "A", "item": "船运费用", "amount": 20300, "included": true },
+    { "scheme": "A", "item": "保险费", "amount": 3500, "included": true },
+    { "scheme": "A", "item": "报关费用", "amount": 3500, "included": true },
+    { "scheme": "A", "item": "港杂费用", "amount": 3500, "included": true },
+    { "scheme": "A", "item": "送货到港口费用", "amount": 6500, "included": true },
+    { "scheme": "B", "item": "船运费用", "amount": 43910, "included": true },
+    { "scheme": "B", "item": "订舱费", "amount": 390, "included": true },
+    { "scheme": "B", "item": "港杂费", "amount": 200, "included": true },
+    { "scheme": "B", "item": "文件费", "amount": 450, "included": true },
+    { "scheme": "B", "item": "THC码头操作费", "amount": 986, "included": true },
+    { "scheme": "B", "item": "EDI费", "amount": 30, "included": true },
+    { "scheme": "B", "item": "设备管理费", "amount": 100, "included": true },
+    { "scheme": "B", "item": "舱单录入费", "amount": 100, "included": true },
+    { "scheme": "B", "item": "电放费", "amount": 450, "included": true },
+    { "scheme": "B", "item": "报关费", "amount": 100, "included": true },
+    { "scheme": "B", "item": "熏蒸费", "amount": 400, "included": true },
+    { "scheme": "B", "item": "拖车费", "amount": 3600, "included": true }
+  ]
+}

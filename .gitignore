@@ -1,0 +1,4 @@
+.DS_Store
+excelutil/data/
+excelutil/excelutil
+*.log

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CFR报价自动计算器</title>
+  <link rel="stylesheet" href="quote-calculator.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>CFR报价自动计算器</h1>
+        <p class="subtitle">货物成本、货代费用、客户报价、净利润自动联动</p>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="archiveBtn" title="归档到服务器（长期保存）" type="button">保存到归档</button>
+        <button class="btn" id="historyBtn" title="查看服务器归档列表" type="button">查看历史</button>
+        <button class="btn danger" id="clearBtn" type="button">清空</button>
+        <button class="btn" id="mdBtn" type="button">下载MD</button>
+        <button class="btn primary" id="excelBtn" type="button">下载Excel</button>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="main-column">
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">基础信息</h2>
+            <span class="pill" id="termPill">CFR</span>
+          </div>
+          <div class="section-body">
+            <div class="form-grid">
+              <div class="field">
+                <label for="companyName">我方公司名称</label>
+                <input id="companyName" placeholder="例如：Quyang ... Co., Ltd.">
+              </div>
+              <div class="field">
+                <label for="projectName">项目/客户</label>
+                <input id="projectName" value="迪拜客户">
+              </div>
+              <div class="field">
+                <label for="tradeTerm">贸易术语</label>
+                <select id="tradeTerm">
+                  <option value="CFR" selected>CFR</option>
+                  <option value="FOB">FOB</option>
+                  <option value="CIF">CIF</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="containerType">柜型</label>
+                <input id="containerType" value="20GP 20尺普通干货集装箱">
+              </div>
+              <div class="field">
+                <label for="destination">目的港/目的地</label>
+                <input id="destination" value="Dubai">
+              </div>
+              <div class="field">
+                <label for="validUntil">报价有效期</label>
+                <input id="validUntil" value="6月21日">
+              </div>
+              <div class="field">
+                <label for="exchangeRate">USD兑RMB汇率</label>
+                <div class="rate-input">
+                  <input id="exchangeRate" class="num" type="number" step="0.0001" value="6.7750677507">
+                  <button class="btn" id="fetchRateBtn" type="button">获取</button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="quoteUsd">最终客户报价(USD)</label>
+                <input id="quoteUsd" class="num" type="number" step="1" value="35500">
+              </div>
+              <div class="field">
+                <label for="targetProfit">目标利润率</label>
+                <input id="targetProfit" class="num" type="number" step="0.01" value="15">
+              </div>
+              <div class="field">
+                <label for="selectedScheme">当前编辑货代</label>
+                <select id="selectedScheme"></select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">货物成本</h2>
+            <button class="btn" id="addCargoBtn" type="button">新增货物</button>
+          </div>
+          <div class="section-body">
+            <div class="table-wrap">
+              <table id="cargoTable">
+                <colgroup>
+                  <col class="cargo-name">
+                  <col class="cargo-spec">
+                  <col class="cargo-dim">
+                  <col class="cargo-dim">
+                  <col class="cargo-dim">
+                  <col class="cargo-weight">
+                  <col class="cargo-qty">
+                  <col class="cargo-price">
+                  <col class="cargo-tax-rate">
+                  <col class="cargo-tax">
+                  <col class="cargo-total">
+                  <col class="row-action">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>货物名称</th>
+                    <th>规格</th>
+                    <th>长(m)</th>
+                    <th>高(m)</th>
+                    <th>宽(m)</th>
+                    <th>单箱KG</th>
+                    <th>数量</th>
+                    <th>单价RMB</th>
+                    <th>税率%</th>
+                    <th>税费</th>
+                    <th>合计</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">货代费用</h2>
+            <div class="actions">
+              <button class="btn" id="addFreightSchemeBtn" type="button">新增货代方案</button>
+              <button class="btn" id="addFreightBtn" type="button">新增费用</button>
+            </div>
+          </div>
+          <div class="section-body">
+            <datalist id="freightItemList">
+              <option value="船运费用"></option>
+              <option value="保险费"></option>
+              <option value="报关费用"></option>
+              <option value="港杂费用"></option>
+              <option value="送货到港口费用"></option>
+              <option value="订舱费"></option>
+              <option value="文件费"></option>
+              <option value="THC码头操作费"></option>
+              <option value="EDI费"></option>
+              <option value="设备管理费"></option>
+              <option value="舱单录入费"></option>
+              <option value="电放费"></option>
+              <option value="熏蒸费"></option>
+              <option value="拖车费"></option>
+              <option value="仓储费"></option>
+              <option value="查验费"></option>
+              <option value="目的港费用"></option>
+            </datalist>
+            <div class="table-wrap freight-scroll">
+              <table id="freightTable">
+                <colgroup>
+                  <col class="freight-scheme">
+                  <col>
+                  <col class="freight-amount">
+                  <col class="freight-included">
+                  <col class="row-action">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>方案</th>
+                    <th>费用项目</th>
+                    <th>金额RMB</th>
+                    <th>计入报价</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="summary-column">
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">最终结果</h2>
+            <span class="pill" id="selectedSchemePill">A货代</span>
+          </div>
+          <div class="section-body">
+            <div class="summary-grid">
+              <div class="metric">
+                <div class="label">货物总成本</div>
+                <div class="value" id="goodsCost">¥0</div>
+              </div>
+              <div class="metric">
+                <div class="label">最终报价折合</div>
+                <div class="value" id="quoteRmb">¥0</div>
+              </div>
+              <div class="metric amber">
+                <div class="label">最终采用总成本</div>
+                <div class="value" id="selectedCost">¥0</div>
+              </div>
+              <div class="metric green" id="profitMetric">
+                <div class="label">最终净利润</div>
+                <div class="value" id="selectedProfit">¥0</div>
+              </div>
+            </div>
+            <div class="status-line" id="statusLine"></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">方案对比</h2>
+          </div>
+          <div class="section-body">
+            <div class="table-wrap">
+              <table class="summary-table" id="summaryTable">
+                <thead>
+                  <tr>
+                    <th>方案</th>
+                    <th>物流费</th>
+                    <th>总成本</th>
+                    <th>15%价</th>
+                    <th>净利润</th>
+                    <th>净利率</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="note" id="termNote"></p>
+            <p class="note" id="rateSource">汇率可手动填写；公开接口数据可能每日更新，不等同银行结汇实时成交价。</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">备注</h2>
+          </div>
+          <div class="section-body">
+            <textarea id="notes">目的港清关、关税、目的港杂费、目的地派送等费用默认不包含在CFR报价内。</textarea>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+  </main>
+
+  <div class="modal-backdrop hidden" id="exportDialog" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
+    <div class="modal">
+      <h2 id="exportDialogTitle">选择下载版本</h2>
+      <p>客户版不包含成本、利润、货代明细；内部留存版包含完整测算。</p>
+      <div class="field modal-field">
+        <label for="exportLanguage">导出语言</label>
+        <select id="exportLanguage">
+          <option value="zh" selected>中文</option>
+          <option value="en">English</option>
+          <option value="bilingual">中英双语</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" data-export-mode="customer">客户版</button>
+        <button class="btn" type="button" data-export-mode="internal">内部留存版</button>
+        <button class="btn" id="cancelExportBtn" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="historyDialog" role="dialog" aria-modal="true">
+    <div class="modal large-modal">
+      <h2>服务器归档历史</h2>
+      <p>长期保存在服务器上的报价记录。</p>
+      <div class="table-wrap history-table-wrap">
+        <table id="historyTable">
+          <thead>
+            <tr>
+              <th>归档时间</th>
+              <th>项目/客户</th>
+              <th>备注</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="closeHistoryBtn" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="quote-calculator.js"></script>
+</body>
+</html>

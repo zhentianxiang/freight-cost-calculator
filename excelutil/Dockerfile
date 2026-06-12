@@ -1,0 +1,23 @@
+# ── 阶段 1：构建 ──────────────────────────────────────────────────────────
+FROM golang:1.25-alpine AS builder
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /build
+
+# 先复制 go.mod + go.sum 以利用 Docker 缓存
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 复制源码并编译
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o excelutil .
+
+# ── 阶段 2：运行 ──────────────────────────────────────────────────────────
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+
+# 只复制编译好的二进制，镜像体积极小
+COPY --from=builder /build/excelutil .
+
+EXPOSE 8081
+ENTRYPOINT ["/app/excelutil", "-server"]
