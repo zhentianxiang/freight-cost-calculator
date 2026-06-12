@@ -74,11 +74,7 @@
                 <label for="targetProfit">目标利润率</label>
                 <input id="targetProfit" class="num" type="number" step="0.01" value="15">
               </div>
-              <div class="field">
-                <label for="selectedScheme">当前编辑货代</label>
-                <select id="selectedScheme"></select>
               </div>
-            </div>
           </div>
         </section>
 
@@ -129,10 +125,14 @@
         <section class="section">
           <div class="section-header">
             <h2 class="section-title">货代费用</h2>
-            <div class="actions">
-              <button class="btn" id="addFreightSchemeBtn" type="button">新增货代方案</button>
-              <button class="btn" id="addFreightBtn" type="button">新增费用</button>
-            </div>
+            <div class="selected-scheme-wrap">
+                <label for="selectedScheme">当前编辑</label>
+                <select id="selectedScheme" class="scheme-select"></select>
+              </div>
+              <div class="actions">
+                <button class="btn" id="addFreightSchemeBtn" type="button">新增货代方案</button>
+                <button class="btn" id="addFreightBtn" type="button">新增费用</button>
+              </div>
           </div>
           <div class="section-body">
             <datalist id="freightItemList">
@@ -158,7 +158,7 @@
               <table id="freightTable">
                 <colgroup>
                   <col class="freight-scheme">
-                  <col>
+                  <col class="freight-item">
                   <col class="freight-amount">
                   <col class="freight-included">
                   <col class="row-action">
@@ -245,6 +245,22 @@
     </section>
 
   </main>
+
+  <div class="modal-backdrop hidden" id="schemePromptDialog" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h2>新增货代方案</h2>
+      <p>输入此货代方案的名称，例如"马士基"、"中远"或"A货代"。</p>
+      <div class="field modal-field">
+        <label for="schemeNameInput">方案名称</label>
+        <input id="schemeNameInput" class="scheme-name-input" placeholder="例如：马士基" autofocus>
+      </div>
+      <p class="scheme-error hidden" id="schemeError"></p>
+      <div class="modal-actions">
+        <button class="btn primary" id="saveSchemeBtn" type="button">确定</button>
+        <button class="btn" id="cancelSchemeBtn" type="button">取消</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-backdrop hidden" id="exportDialog" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
     <div class="modal">

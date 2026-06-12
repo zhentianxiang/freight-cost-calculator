@@ -4,7 +4,7 @@ FROM nginx:alpine
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 
 # 复制前端静态文件
-COPY 报价计算器.html /usr/share/nginx/html/
+COPY index.html /usr/share/nginx/html/
 COPY quote-calculator.js /usr/share/nginx/html/
 COPY quote-calculator.css /usr/share/nginx/html/
 

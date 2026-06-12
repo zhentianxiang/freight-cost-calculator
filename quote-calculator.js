@@ -1,27 +1,27 @@
 const state = {
-  schemes: ["A", "B"],
+  schemes: ["A货代", "B货代"],
   cargo: [
     { name: "大理石马", spec: "实际出货尺寸", length: 2.1, height: 2.1, width: 0.5, weight: 2200, qty: 5, unitPrice: 20000, taxRate: 13 },
     { name: "不锈钢猎鹰", spec: "实际出货尺寸", length: 3, height: 2, width: 0.8, weight: 500, qty: 1, unitPrice: 40000, taxRate: 0 }
   ],
   freight: [
-    { scheme: "A", item: "船运费用", amount: 20300, included: true },
-    { scheme: "A", item: "保险费", amount: 3500, included: true },
-    { scheme: "A", item: "报关费用", amount: 3500, included: true },
-    { scheme: "A", item: "港杂费用", amount: 3500, included: true },
-    { scheme: "A", item: "送货到港口费用", amount: 6500, included: true },
-    { scheme: "B", item: "船运费用", amount: 43910, included: true },
-    { scheme: "B", item: "订舱费", amount: 390, included: true },
-    { scheme: "B", item: "港杂费", amount: 200, included: true },
-    { scheme: "B", item: "文件费", amount: 450, included: true },
-    { scheme: "B", item: "THC码头操作费", amount: 986, included: true },
-    { scheme: "B", item: "EDI费", amount: 30, included: true },
-    { scheme: "B", item: "设备管理费", amount: 100, included: true },
-    { scheme: "B", item: "舱单录入费", amount: 100, included: true },
-    { scheme: "B", item: "电放费", amount: 450, included: true },
-    { scheme: "B", item: "报关费", amount: 100, included: true },
-    { scheme: "B", item: "熏蒸费", amount: 400, included: true },
-    { scheme: "B", item: "拖车费", amount: 3600, included: true }
+    { scheme: "A货代", item: "船运费用", amount: 20300, included: true },
+    { scheme: "A货代", item: "保险费", amount: 3500, included: true },
+    { scheme: "A货代", item: "报关费用", amount: 3500, included: true },
+    { scheme: "A货代", item: "港杂费用", amount: 3500, included: true },
+    { scheme: "A货代", item: "送货到港口费用", amount: 6500, included: true },
+    { scheme: "B货代", item: "船运费用", amount: 43910, included: true },
+    { scheme: "B货代", item: "订舱费", amount: 390, included: true },
+    { scheme: "B货代", item: "港杂费", amount: 200, included: true },
+    { scheme: "B货代", item: "文件费", amount: 450, included: true },
+    { scheme: "B货代", item: "THC码头操作费", amount: 986, included: true },
+    { scheme: "B货代", item: "EDI费", amount: 30, included: true },
+    { scheme: "B货代", item: "设备管理费", amount: 100, included: true },
+    { scheme: "B货代", item: "舱单录入费", amount: 100, included: true },
+    { scheme: "B货代", item: "电放费", amount: 450, included: true },
+    { scheme: "B货代", item: "报关费", amount: 100, included: true },
+    { scheme: "B货代", item: "熏蒸费", amount: 400, included: true },
+    { scheme: "B货代", item: "拖车费", amount: 3600, included: true }
   ]
 };
 
@@ -194,7 +194,7 @@ function renderSchemeOptions() {
   const select = $("selectedScheme");
   const current = select.value;
   select.innerHTML = state.schemes
-    .map((scheme) => `<option value="${escapeXml(scheme)}">${escapeXml(scheme)}货代</option>`)
+    .map((scheme) => `<option value="${escapeXml(scheme)}">${escapeXml(scheme)}</option>`)
     .join("");
   select.value = state.schemes.includes(current) ? current : state.schemes[0];
 }
@@ -246,18 +246,18 @@ function renderCargo() {
   state.cargo.forEach((row, index) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><input value="${escapeXml(row.name)}" data-cargo="${index}" data-key="name"></td>
-      <td><input value="${escapeXml(row.spec)}" data-cargo="${index}" data-key="spec"></td>
-      <td><input class="num" type="number" step="0.01" value="${row.length}" data-cargo="${index}" data-key="length"></td>
-      <td><input class="num" type="number" step="0.01" value="${row.height}" data-cargo="${index}" data-key="height"></td>
-      <td><input class="num" type="number" step="0.01" value="${row.width}" data-cargo="${index}" data-key="width"></td>
-      <td><input class="num" type="number" step="1" value="${row.weight}" data-cargo="${index}" data-key="weight"></td>
-      <td><input class="num" type="number" step="1" value="${row.qty}" data-cargo="${index}" data-key="qty"></td>
-      <td><input class="num" type="number" step="1" value="${row.unitPrice}" data-cargo="${index}" data-key="unitPrice"></td>
-      <td><input class="num" type="number" step="0.01" value="${row.taxRate}" data-cargo="${index}" data-key="taxRate"></td>
-      <td class="readonly">${fmt.format(cargoTax(row))}</td>
-      <td class="readonly">${fmt.format(cargoTotal(row))}</td>
-      <td><button class="btn danger small-btn" type="button" data-delete-cargo="${index}">×</button></td>
+      <td class="cargo-name"><input value="${escapeXml(row.name)}" data-cargo="${index}" data-key="name"></td>
+      <td class="cargo-spec"><input value="${escapeXml(row.spec)}" data-cargo="${index}" data-key="spec"></td>
+      <td class="cargo-dim"><input class="num" type="number" step="0.01" value="${row.length}" data-cargo="${index}" data-key="length"></td>
+      <td class="cargo-dim"><input class="num" type="number" step="0.01" value="${row.height}" data-cargo="${index}" data-key="height"></td>
+      <td class="cargo-dim"><input class="num" type="number" step="0.01" value="${row.width}" data-cargo="${index}" data-key="width"></td>
+      <td class="cargo-weight"><input class="num" type="number" step="1" value="${row.weight}" data-cargo="${index}" data-key="weight"></td>
+      <td class="cargo-qty"><input class="num" type="number" step="1" value="${row.qty}" data-cargo="${index}" data-key="qty"></td>
+      <td class="cargo-price"><input class="num" type="number" step="1" value="${row.unitPrice}" data-cargo="${index}" data-key="unitPrice"></td>
+      <td class="cargo-tax-rate"><input class="num" type="number" step="0.01" value="${row.taxRate}" data-cargo="${index}" data-key="taxRate"></td>
+      <td class="cargo-tax readonly">${fmt.format(cargoTax(row))}</td>
+      <td class="cargo-total readonly">${fmt.format(cargoTotal(row))}</td>
+      <td class="row-action"><button class="btn danger small-btn" type="button" data-delete-cargo="${index}">×</button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -266,27 +266,27 @@ function renderCargo() {
 function renderFreight() {
   syncSchemesFromRows();
   const schemeOptions = state.schemes
-    .map((scheme) => `<option value="${escapeXml(scheme)}">${escapeXml(scheme)}货代</option>`)
+    .map((scheme) => `<option value="${escapeXml(scheme)}">${escapeXml(scheme)}</option>`)
     .join("");
   const tbody = $("freightTable").querySelector("tbody");
   tbody.innerHTML = "";
   state.freight.forEach((row, index) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>
+      <td class="freight-scheme">
         <select data-freight="${index}" data-key="scheme">
           ${schemeOptions}
         </select>
       </td>
-      <td><input list="freightItemList" value="${escapeXml(row.item)}" data-freight="${index}" data-key="item"></td>
-      <td><input class="num" type="number" step="1" value="${row.amount}" data-freight="${index}" data-key="amount"></td>
-      <td>
+      <td class="freight-item"><input list="freightItemList" value="${escapeXml(row.item)}" data-freight="${index}" data-key="item"></td>
+      <td class="freight-amount"><input class="num" type="number" step="1" value="${row.amount}" data-freight="${index}" data-key="amount"></td>
+      <td class="freight-included">
         <select data-freight="${index}" data-key="included">
           <option value="true"${row.included ? " selected" : ""}>是</option>
           <option value="false"${!row.included ? " selected" : ""}>否</option>
         </select>
       </td>
-      <td><button class="btn danger small-btn" type="button" data-delete-freight="${index}">×</button></td>
+      <td class="row-action"><button class="btn danger small-btn" type="button" data-delete-freight="${index}">×</button></td>
     `;
     tr.querySelector("[data-key='scheme']").value = row.scheme;
     tbody.appendChild(tr);
@@ -297,7 +297,8 @@ function renderSummary() {
   const result = calculate();
   const selected = getBestScheme(result.schemes) || result.schemes[0];
   $("termPill").textContent = result.inputs.tradeTerm;
-  $("selectedSchemePill").textContent = `${selected.scheme}货代 最优`;
+  $("selectedSchemePill").textContent = `${selected.scheme} 最优`;
+  $("summaryTable").querySelector("thead th:nth-child(4)").textContent = `${result.inputs.targetProfit}%价`;
   $("goodsCost").textContent = money(result.goodsCost);
   $("quoteRmb").textContent = money(result.quoteRmb);
   $("selectedCost").textContent = money(selected.totalCost);
@@ -311,7 +312,7 @@ function renderSummary() {
   result.schemes.forEach((row) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${row.scheme}货代${row.scheme === selected.scheme ? "（最优）" : ""}</td>
+      <td>${row.scheme}${row.scheme === selected.scheme ? "（最优）" : ""}</td>
       <td class="money">${fmt.format(row.freight)}</td>
       <td class="money">${fmt.format(row.totalCost)}</td>
       <td class="money">${fmt.format(row.targetPrice)}</td>
@@ -334,7 +335,32 @@ function syncAndRender() {
   renderSummary();
 }
 
-function updateStateFromEvent(event) {
+function updateStateOnInput(event) {
+  const target = event.target;
+  let changed = false;
+  if (target.matches("[data-cargo]")) {
+    const row = state.cargo[Number(target.dataset.cargo)];
+    const key = target.dataset.key;
+    row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
+    renderSummary();
+    changed = true;
+  }
+  if (target.matches("[data-freight]")) {
+    const row = state.freight[Number(target.dataset.freight)];
+    const key = target.dataset.key;
+    if (key === "included") row[key] = target.value === "true";
+    else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
+    renderSummary();
+    changed = true;
+  }
+  if (target.closest(".section-body") || target.closest(".topbar")) {
+    renderSummary();
+    changed = true;
+  }
+  if (changed) scheduleAutoSave();
+}
+
+function updateStateOnChange(event) {
   const target = event.target;
   let changed = false;
   if (target.matches("[data-cargo]")) {
@@ -354,7 +380,7 @@ function updateStateFromEvent(event) {
     renderSummary();
     changed = true;
   }
-  if (target.closest(".section-body") || target.closest(".topbar")) {
+  if (target.closest(".section-body") && !target.matches("[data-cargo]") && !target.matches("[data-freight]")) {
     renderSummary();
     changed = true;
   }
@@ -375,17 +401,45 @@ function addFreight(scheme) {
 }
 
 function addFreightScheme() {
-  const scheme = getNextSchemeId();
+  const defaultName = getNextSchemeId();
+  $("schemeNameInput").value = defaultName;
+  $("schemeError").classList.add("hidden");
+  $("schemePromptDialog").classList.remove("hidden");
+  setTimeout(() => {
+    const input = $("schemeNameInput");
+    input.focus();
+    input.select();
+  }, 50);
+}
+
+function saveSchemeName() {
+  const name = $("schemeNameInput").value.trim();
+  if (!name) {
+    $("schemeError").textContent = "方案名称不能为空。";
+    $("schemeError").classList.remove("hidden");
+    return;
+  }
+  if (state.schemes.includes(name)) {
+    $("schemeError").textContent = "该名称已存在，请使用其他名称。";
+    $("schemeError").classList.remove("hidden");
+    return;
+  }
+  const scheme = name;
   state.schemes.push(scheme);
   state.freight.push({ scheme, item: "", amount: 0, included: true });
   syncAndRender();
   $("selectedScheme").value = scheme;
   renderSummary();
   scheduleAutoSave();
+  $("schemePromptDialog").classList.add("hidden");
+}
+
+function cancelSchemeName() {
+  $("schemePromptDialog").classList.add("hidden");
 }
 
 function applyEmptyState() {
-  state.schemes = ["A"];
+  state.schemes = ["A货代"];
   state.cargo = [];
   state.freight = [];
 }
@@ -427,7 +481,7 @@ function yesNo(value, lang) {
 }
 
 function freightName(scheme, lang) {
-  return `${scheme}${tx(lang, "货代", "Forwarder")}`;
+  return scheme;
 }
 
 function quoteTitle(projectName, lang, detail = false) {
@@ -833,8 +887,8 @@ async function loadSnapshot(id) {
   }
 }
 
-document.addEventListener("input", updateStateFromEvent);
-document.addEventListener("change", updateStateFromEvent);
+document.addEventListener("input", updateStateOnInput);
+document.addEventListener("change", updateStateOnChange);
 document.addEventListener("click", (event) => {
   const cargoIndex = event.target.dataset.deleteCargo;
   const freightIndex = event.target.dataset.deleteFreight;
@@ -867,6 +921,14 @@ $("fetchRateBtn").addEventListener("click", fetchUsdCnyRate);
 $("clearBtn").addEventListener("click", clearAllData);
 $("mdBtn").addEventListener("click", () => openExportDialog("md"));
  $("excelBtn").addEventListener("click", () => openExportDialog("excel"));
+$("saveSchemeBtn").addEventListener("click", saveSchemeName);
+$("cancelSchemeBtn").addEventListener("click", cancelSchemeName);
+$("schemePromptDialog").addEventListener("click", (event) => {
+  if (event.target.id === "schemePromptDialog") cancelSchemeName();
+});
+$("schemeNameInput").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") saveSchemeName();
+});
 $("cancelExportBtn").addEventListener("click", closeExportDialog);
 $("exportDialog").addEventListener("click", (event) => {
   if (event.target.id === "exportDialog") closeExportDialog();
