@@ -40,10 +40,27 @@ const escapeXml = (value) => String(value ?? "").replace(/[<>&"']/g, (ch) => ({
 const escapeMd = (value) => String(value ?? "").replace(/\|/g, "\\|");
 const schemeLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const storageDraftKey = "quote-calculator-draft";
+const piStorageDraftKey = "pi-invoice-draft-v2";
 const autosaveDelayMs = 3000;
 let pendingDownloadType = "";
 let autosaveTimer = 0;
 let lastSavedSignature = "";
+
+const piDefaultTerms = `1. This PI becomes binding after buyer's written acceptance and seller's receipt of agreed deposit or full payment.
+2. Production and shipment schedules are counted from the date cleared funds are received in seller's bank account.
+3. Natural marble and stone may vary in veining, color tone, texture, mineral lines, pinholes and natural repair.
+4. Buyer shall approve drawings, renderings, models, stone selection photos or production photos where applicable.
+5. Seller shall use export-standard packing. Risk transfer follows agreed Incoterms 2020.
+6. Buyer is responsible for import license, customs clearance, duties, taxes, storage and destination charges unless included under agreed Incoterms.
+7. Customized marble and stone sculptures are made-to-order. Deposit is non-refundable after production starts except for seller's material breach.
+8. Prices, bank details, drawings, private designs and commercial terms are confidential.`;
+
+const piState = {
+  items: [
+    { product: "Marble Horse Sculpture / 大理石马雕塑", material: "Natural marble", finish: "Hand carved / polished", size: "2.1 x 0.5 x 2.1 m", qty: 5, unit: "set", unitPrice: 5920, remarks: "Custom design per approved drawing/photo" },
+    { product: "Stainless Steel Falcon / 不锈钢猎鹰", material: "Stainless steel", finish: "Mirror polished", size: "3 x 0.8 x 2 m", qty: 1, unit: "set", unitPrice: 5900, remarks: "Actual shipment size" }
+  ]
+};
 
 function cargoTax(row) {
   return cleanNum(row.unitPrice) * cleanNum(row.qty) * cleanNum(row.taxRate) / 100;
@@ -337,6 +354,7 @@ function syncAndRender() {
 
 function updateStateOnInput(event) {
   const target = event.target;
+  if (target.closest("#piPage")) return;
   let changed = false;
   if (target.matches("[data-cargo]")) {
     const row = state.cargo[Number(target.dataset.cargo)];
@@ -362,6 +380,7 @@ function updateStateOnInput(event) {
 
 function updateStateOnChange(event) {
   const target = event.target;
+  if (target.closest("#piPage")) return;
   let changed = false;
   if (target.matches("[data-cargo]")) {
     const row = state.cargo[Number(target.dataset.cargo)];
@@ -887,11 +906,397 @@ async function loadSnapshot(id) {
   }
 }
 
+function setActiveView(view) {
+  document.querySelectorAll(".nav-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === view);
+  });
+  $("quotePage").classList.toggle("active", view === "quote");
+  $("piPage").classList.toggle("active", view === "pi");
+  if (view === "pi") renderPi();
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function defaultPiNo() {
+  const compactDate = todayISO().replaceAll("-", "");
+  return `PI-${compactDate}-001`;
+}
+
+function defaultPiInvoice() {
+  const piNo = defaultPiNo();
+  return {
+    piNo,
+    issueDate: todayISO(),
+    incoterms: "CFR",
+    paymentTerm: "T/T Wire Transfer",
+    validity: "15 days",
+    customerRef: "Inquiry-Dubai-001",
+    currency: "USD",
+    salesContact: "Sales Manager / WhatsApp / Email",
+    loadingPort: "Tianjin / China Port",
+    destination: "Dubai",
+    shipment: "By sea",
+    deliveryTime: "To be confirmed after deposit",
+    packing: "Export standard wooden crate packing",
+    seller: {
+      company: "Quyang Sculpture Co., Ltd.",
+      address: "Quyang County, Baoding, Hebei, China",
+      contact: "Sales Manager",
+      tel: "+86 000 0000 0000",
+      email: "sales@example.com",
+      licenseNo: "Sample Business License No.",
+      customsCode: "Sample Customs Code"
+    },
+    buyer: {
+      company: "Dubai Customer LLC",
+      address: "Dubai, United Arab Emirates",
+      contact: "Purchasing Manager",
+      tel: "+971 00 000 0000",
+      email: "buyer@example.com",
+      taxNo: "Sample VAT / Importer No."
+    },
+    items: [
+      { product: "Marble Horse Sculpture / 大理石马雕塑", material: "Natural marble", finish: "Hand carved / polished", size: "2.1 x 0.5 x 2.1 m", qty: 5, unit: "set", unitPrice: 5920, remarks: "Custom design per approved drawing/photo" },
+      { product: "Stainless Steel Falcon / 不锈钢猎鹰", material: "Stainless steel", finish: "Mirror polished", size: "3 x 0.8 x 2 m", qty: 1, unit: "set", unitPrice: 5900, remarks: "Actual shipment size" }
+    ],
+    bank: {
+      beneficiary: "Quyang Sculpture Co., Ltd.",
+      beneficiaryAddress: "Quyang County, Baoding, Hebei, China",
+      bankName: "Sample Bank",
+      bankAddress: "Sample Bank Address",
+      accountNo: "000000000000",
+      swift: "SAMPLEXX",
+      bankCode: "Routing / IBAN if applicable",
+      paymentReference: `${piNo} - Dubai Customer LLC`,
+      bankCharges: "All bank charges outside seller's bank are for buyer's account unless otherwise agreed."
+    },
+    terms: piDefaultTerms,
+    notes: "Please replace sample contact and bank details with confirmed information before sending to buyer."
+  };
+}
+
+function initPiDefaults() {
+  applyPiInvoice(defaultPiInvoice());
+}
+
+function getPiText(id) {
+  return ($(id)?.value || "").trim();
+}
+
+function getPiInvoice() {
+  return {
+    piNo: getPiText("piNo"),
+    issueDate: getPiText("piIssueDate"),
+    incoterms: getPiText("piIncoterms"),
+    paymentTerm: getPiText("piPaymentTerm"),
+    validity: getPiText("piValidity"),
+    customerRef: getPiText("piCustomerRef"),
+    currency: getPiText("piCurrency") || "USD",
+    salesContact: getPiText("piSalesContact"),
+    loadingPort: getPiText("piLoadingPort"),
+    destination: getPiText("piDestination"),
+    shipment: getPiText("piShipment"),
+    deliveryTime: getPiText("piDeliveryTime"),
+    packing: getPiText("piPacking"),
+    seller: {
+      company: getPiText("piSellerCompany"),
+      address: getPiText("piSellerAddress"),
+      contact: getPiText("piSellerContact"),
+      tel: getPiText("piSellerTel"),
+      email: getPiText("piSellerEmail"),
+      licenseNo: getPiText("piSellerLicense"),
+      customsCode: getPiText("piSellerCustoms")
+    },
+    buyer: {
+      company: getPiText("piBuyerCompany"),
+      address: getPiText("piBuyerAddress"),
+      contact: getPiText("piBuyerContact"),
+      tel: getPiText("piBuyerTel"),
+      email: getPiText("piBuyerEmail"),
+      taxNo: getPiText("piBuyerTax")
+    },
+    items: piState.items.map((row) => ({
+      product: row.product,
+      material: row.material,
+      finish: row.finish,
+      size: row.size,
+      qty: cleanNum(row.qty),
+      unit: row.unit || "set",
+      unitPrice: cleanNum(row.unitPrice),
+      remarks: row.remarks
+    })),
+    bank: {
+      beneficiary: getPiText("piBankBeneficiary"),
+      beneficiaryAddress: getPiText("piBeneficiaryAddress"),
+      bankName: getPiText("piBankName"),
+      bankAddress: getPiText("piBankAddress"),
+      accountNo: getPiText("piAccountNo"),
+      swift: getPiText("piSwift"),
+      bankCode: getPiText("piBankCode"),
+      paymentReference: getPiText("piPaymentReference"),
+      bankCharges: getPiText("piBankCharges")
+    },
+    terms: getPiText("piTerms"),
+    notes: getPiText("piNotes")
+  };
+}
+
+function piAmount(row) {
+  return cleanNum(row.qty) * cleanNum(row.unitPrice);
+}
+
+function piTotal() {
+  return piState.items.reduce((sum, row) => sum + piAmount(row), 0);
+}
+
+function formatPiMoney(value, currency = getPiText("piCurrency") || "USD") {
+  return `${currency} ${fmt.format(Math.round(value || 0))}`;
+}
+
+function renderPiItems() {
+  const tbody = $("piItemTable").querySelector("tbody");
+  tbody.innerHTML = "";
+  piState.items.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="pi-product"><input value="${escapeXml(row.product)}" data-pi-item="${index}" data-key="product"></td>
+      <td class="pi-material"><input value="${escapeXml(row.material)}" data-pi-item="${index}" data-key="material"></td>
+      <td class="pi-finish"><input value="${escapeXml(row.finish)}" data-pi-item="${index}" data-key="finish"></td>
+      <td class="pi-size"><input value="${escapeXml(row.size)}" data-pi-item="${index}" data-key="size"></td>
+      <td class="pi-qty"><input class="num" type="number" step="1" value="${row.qty}" data-pi-item="${index}" data-key="qty"></td>
+      <td class="pi-unit"><input value="${escapeXml(row.unit)}" data-pi-item="${index}" data-key="unit"></td>
+      <td class="pi-price"><input class="num" type="number" step="0.01" value="${row.unitPrice}" data-pi-item="${index}" data-key="unitPrice"></td>
+      <td class="pi-amount readonly">${fmt.format(Math.round(piAmount(row)))}</td>
+      <td class="pi-remarks"><input value="${escapeXml(row.remarks)}" data-pi-item="${index}" data-key="remarks"></td>
+      <td class="row-action"><button class="btn danger small-btn" type="button" data-delete-pi-item="${index}">×</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function previewRow(label, value) {
+  return `<div class="pi-preview-row"><div class="label">${escapeXml(label)}</div><div class="value">${escapeXml(value || "-")}</div></div>`;
+}
+
+function renderPiPreview() {
+  const invoice = getPiInvoice();
+  const currency = invoice.currency || "USD";
+  $("piCurrencyPill").textContent = currency;
+  $("piTotalPill").textContent = formatPiMoney(piTotal(), currency);
+  const itemRows = invoice.items.map((row, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${escapeXml(row.product)}</td>
+      <td class="money">${fmt.format(row.qty)}</td>
+      <td class="money">${fmt.format(Math.round(row.unitPrice || 0))}</td>
+      <td class="money">${fmt.format(Math.round(row.qty * row.unitPrice || 0))}</td>
+    </tr>
+  `).join("");
+  $("piPreview").innerHTML = `
+    <div class="pi-preview-block">
+      <h3>${escapeXml(invoice.piNo || "PROFORMA INVOICE")}</h3>
+      ${previewRow("开票日期", invoice.issueDate)}
+      ${previewRow("贸易术语", `${invoice.incoterms} ${invoice.destination}`.trim())}
+      ${previewRow("付款方式", invoice.paymentTerm)}
+      ${previewRow("有效期", invoice.validity)}
+    </div>
+    <div class="pi-preview-block">
+      ${previewRow("卖方", invoice.seller.company)}
+      ${previewRow("买方", invoice.buyer.company)}
+      ${previewRow("目的地", invoice.destination)}
+      ${previewRow("交期", invoice.deliveryTime)}
+    </div>
+    <div class="pi-preview-table">
+      <table>
+        <thead><tr><th>No.</th><th>产品</th><th>数量</th><th>单价</th><th>金额</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+    </div>
+  `;
+  $("piStatusLine").textContent = `当前PI合计 ${formatPiMoney(piTotal(), currency)}，共 ${invoice.items.length} 个产品行。`;
+}
+
+function renderPi() {
+  renderPiItems();
+  renderPiPreview();
+}
+
+function persistPiDraft() {
+  localStorage.setItem(piStorageDraftKey, JSON.stringify(getPiInvoice()));
+}
+
+function loadPiDraft() {
+  try {
+    const draft = JSON.parse(localStorage.getItem(piStorageDraftKey) || "null");
+    if (!draft) return false;
+    applyPiInvoice(draft);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function applyPiInvoice(invoice = {}) {
+  const map = {
+    piNo: invoice.piNo,
+    piIssueDate: invoice.issueDate,
+    piIncoterms: invoice.incoterms,
+    piPaymentTerm: invoice.paymentTerm,
+    piValidity: invoice.validity,
+    piCustomerRef: invoice.customerRef,
+    piCurrency: invoice.currency,
+    piSalesContact: invoice.salesContact,
+    piLoadingPort: invoice.loadingPort,
+    piDestination: invoice.destination,
+    piShipment: invoice.shipment,
+    piDeliveryTime: invoice.deliveryTime,
+    piPacking: invoice.packing,
+    piSellerCompany: invoice.seller?.company,
+    piSellerAddress: invoice.seller?.address,
+    piSellerContact: invoice.seller?.contact,
+    piSellerTel: invoice.seller?.tel,
+    piSellerEmail: invoice.seller?.email,
+    piSellerLicense: invoice.seller?.licenseNo,
+    piSellerCustoms: invoice.seller?.customsCode,
+    piBuyerCompany: invoice.buyer?.company,
+    piBuyerAddress: invoice.buyer?.address,
+    piBuyerContact: invoice.buyer?.contact,
+    piBuyerTel: invoice.buyer?.tel,
+    piBuyerEmail: invoice.buyer?.email,
+    piBuyerTax: invoice.buyer?.taxNo,
+    piBankBeneficiary: invoice.bank?.beneficiary,
+    piBeneficiaryAddress: invoice.bank?.beneficiaryAddress,
+    piBankName: invoice.bank?.bankName,
+    piBankAddress: invoice.bank?.bankAddress,
+    piAccountNo: invoice.bank?.accountNo,
+    piSwift: invoice.bank?.swift,
+    piBankCode: invoice.bank?.bankCode,
+    piPaymentReference: invoice.bank?.paymentReference,
+    piBankCharges: invoice.bank?.bankCharges,
+    piTerms: invoice.terms,
+    piNotes: invoice.notes
+  };
+  Object.entries(map).forEach(([id, value]) => {
+    if ($(id) && value !== undefined) $(id).value = value;
+  });
+  if (Array.isArray(invoice.items) && invoice.items.length) {
+    piState.items = invoice.items.map((row) => ({ ...row }));
+  }
+}
+
+function updatePiItem(event) {
+  const target = event.target;
+  if (!target.matches("[data-pi-item]")) return false;
+  const row = piState.items[Number(target.dataset.piItem)];
+  const key = target.dataset.key;
+  row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
+  renderPiPreview();
+  persistPiDraft();
+  return true;
+}
+
+function updatePiForm(event) {
+  if (!event.target.closest("#piPage")) return;
+  if (updatePiItem(event)) return;
+  if (event.target.id === "piNo" || event.target.id === "piBuyerCompany") {
+    $("piPaymentReference").value = `${$("piNo").value} - ${$("piBuyerCompany").value}`.trim();
+  }
+  renderPiPreview();
+  persistPiDraft();
+}
+
+function addPiItem(row = {}) {
+  piState.items.push({
+    product: "",
+    material: "",
+    finish: "",
+    size: "",
+    qty: 1,
+    unit: "set",
+    unitPrice: 0,
+    remarks: "",
+    ...row
+  });
+  renderPi();
+  persistPiDraft();
+}
+
+function clearPi() {
+  localStorage.removeItem(piStorageDraftKey);
+  document.querySelectorAll("#piPage input, #piPage textarea").forEach((input) => {
+    input.value = "";
+  });
+  $("piIncoterms").value = "CFR";
+  $("piCurrency").value = "USD";
+  piState.items = [{ product: "", material: "", finish: "", size: "", qty: 1, unit: "set", unitPrice: 0, remarks: "" }];
+  renderPi();
+  $("piStatusLine").textContent = "已清空当前PI内容。";
+}
+
+function importQuoteToPi() {
+  const inputs = getInputs();
+  $("piSellerCompany").value = inputs.companyName;
+  $("piBuyerCompany").value = inputs.projectName;
+  $("piIncoterms").value = inputs.tradeTerm;
+  $("piDestination").value = inputs.destination;
+  $("piValidity").value = inputs.validUntil || $("piValidity").value;
+  $("piCurrency").value = "USD";
+  $("piNo").value = $("piNo").value || defaultPiNo();
+  $("piIssueDate").value = $("piIssueDate").value || todayISO();
+  $("piPaymentReference").value = `${$("piNo").value} - ${inputs.projectName}`;
+  piState.items = state.cargo.map((row) => ({
+    product: row.name,
+    material: "",
+    finish: "",
+    size: [row.length, row.width, row.height].filter((value) => cleanNum(value) > 0).join(" x "),
+    qty: cleanNum(row.qty) || 1,
+    unit: "set",
+    unitPrice: Math.round(quoteUnitUsd() * 100) / 100,
+    remarks: row.spec
+  }));
+  if (!piState.items.length) addPiItem();
+  renderPi();
+  persistPiDraft();
+  setActiveView("pi");
+}
+
+function piSafeName() {
+  return (getPiText("piNo") || getPiText("piBuyerCompany") || "PI发票").replace(/[\\/:*?"<>|]/g, "_");
+}
+
+async function exportPIExcel() {
+  const invoice = getPiInvoice();
+  try {
+    const resp = await fetch("/api/pi/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(invoice)
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${piSafeName()}_PI形式发票.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    $("piStatusLine").textContent = "已生成并下载PI Excel。";
+  } catch (error) {
+    alert("PI导出失败: " + error.message);
+  }
+}
+
 document.addEventListener("input", updateStateOnInput);
 document.addEventListener("change", updateStateOnChange);
+document.addEventListener("input", updatePiForm);
+document.addEventListener("change", updatePiForm);
 document.addEventListener("click", (event) => {
   const cargoIndex = event.target.dataset.deleteCargo;
   const freightIndex = event.target.dataset.deleteFreight;
+  const piItemIndex = event.target.dataset.deletePiItem;
   if (cargoIndex !== undefined) {
     state.cargo.splice(Number(cargoIndex), 1);
     syncAndRender();
@@ -901,6 +1306,12 @@ document.addEventListener("click", (event) => {
     state.freight.splice(Number(freightIndex), 1);
     syncAndRender();
     scheduleAutoSave();
+  }
+  if (piItemIndex !== undefined) {
+    piState.items.splice(Number(piItemIndex), 1);
+    if (!piState.items.length) addPiItem();
+    renderPi();
+    persistPiDraft();
   }
   
   const loadID = event.target.dataset.loadId;
@@ -939,6 +1350,15 @@ $("exportDialog").addEventListener("click", (event) => {
 $("archiveBtn").addEventListener("click", archiveSnapshot);
 $("historyBtn").addEventListener("click", fetchHistory);
 $("closeHistoryBtn").addEventListener("click", () => $("historyDialog").classList.add("hidden"));
+document.querySelectorAll("[data-view]").forEach((button) => {
+  button.addEventListener("click", () => setActiveView(button.dataset.view));
+});
+$("piAddItemBtn").addEventListener("click", () => addPiItem());
+$("piImportQuoteBtn").addEventListener("click", importQuoteToPi);
+$("piClearBtn").addEventListener("click", clearPi);
+$("piExportBtn").addEventListener("click", exportPIExcel);
 
 loadDraftOnStart();
 syncAndRender();
+if (!loadPiDraft()) initPiDefaults();
+renderPi();

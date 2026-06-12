@@ -8,6 +8,12 @@
 </head>
 <body>
   <main class="app">
+    <nav class="app-nav" aria-label="功能切换">
+      <button class="nav-tab active" type="button" data-view="quote">报价计算</button>
+      <button class="nav-tab" type="button" data-view="pi">PI发票</button>
+    </nav>
+
+    <section class="app-page active" id="quotePage">
     <header class="topbar">
       <div>
         <h1>CFR报价自动计算器</h1>
@@ -242,6 +248,207 @@
           </div>
         </section>
       </aside>
+    </section>
+    </section>
+
+    <section class="app-page" id="piPage">
+      <header class="topbar">
+        <div>
+          <h1>PI形式发票生成器</h1>
+          <p class="subtitle">填写抬头、买卖方、产品明细、银行信息，预览后导出XLSX</p>
+        </div>
+        <div class="actions">
+          <button class="btn" id="piImportQuoteBtn" type="button">从报价带入</button>
+          <button class="btn danger" id="piClearBtn" type="button">清空PI</button>
+          <button class="btn primary" id="piExportBtn" type="button">下载PI Excel</button>
+        </div>
+      </header>
+
+      <section class="grid">
+        <div class="main-column">
+          <section class="section">
+            <div class="section-header">
+              <h2 class="section-title">发票信息</h2>
+              <span class="pill" id="piCurrencyPill">USD</span>
+            </div>
+            <div class="section-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="piNo">PI编号</label>
+                  <input id="piNo">
+                </div>
+                <div class="field">
+                  <label for="piIssueDate">开票日期</label>
+                  <input id="piIssueDate" type="date">
+                </div>
+                <div class="field">
+                  <label for="piIncoterms">贸易术语</label>
+                  <select id="piIncoterms">
+                    <option value="CFR" selected>CFR</option>
+                    <option value="FOB">FOB</option>
+                    <option value="CIF">CIF</option>
+                    <option value="DDP">DDP</option>
+                    <option value="EXW">EXW</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="piCurrency">币种</label>
+                  <input id="piCurrency" value="USD">
+                </div>
+                <div class="field">
+                  <label for="piPaymentTerm">付款方式</label>
+                  <input id="piPaymentTerm" value="T/T Wire Transfer">
+                </div>
+                <div class="field">
+                  <label for="piValidity">有效期</label>
+                  <input id="piValidity" value="15 days">
+                </div>
+                <div class="field">
+                  <label for="piCustomerRef">客户参考号</label>
+                  <input id="piCustomerRef" placeholder="PO / Inquiry No.">
+                </div>
+                <div class="field">
+                  <label for="piSalesContact">业务联系人</label>
+                  <input id="piSalesContact" placeholder="Name / WhatsApp / Email">
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-header">
+              <h2 class="section-title">买卖方信息</h2>
+            </div>
+            <div class="section-body two-panel-form">
+              <div class="party-panel">
+                <h3>SELLER / EXPORTER</h3>
+                <div class="field"><label for="piSellerCompany">卖方公司</label><input id="piSellerCompany"></div>
+                <div class="field"><label for="piSellerAddress">卖方地址</label><textarea id="piSellerAddress"></textarea></div>
+                <div class="form-grid compact-form">
+                  <div class="field"><label for="piSellerContact">联系人</label><input id="piSellerContact"></div>
+                  <div class="field"><label for="piSellerTel">电话</label><input id="piSellerTel"></div>
+                  <div class="field"><label for="piSellerEmail">邮箱</label><input id="piSellerEmail"></div>
+                  <div class="field"><label for="piSellerLicense">营业执照号</label><input id="piSellerLicense"></div>
+                  <div class="field"><label for="piSellerCustoms">海关代码</label><input id="piSellerCustoms"></div>
+                </div>
+              </div>
+              <div class="party-panel">
+                <h3>BUYER / IMPORTER</h3>
+                <div class="field"><label for="piBuyerCompany">买方公司</label><input id="piBuyerCompany"></div>
+                <div class="field"><label for="piBuyerAddress">买方地址</label><textarea id="piBuyerAddress"></textarea></div>
+                <div class="form-grid compact-form">
+                  <div class="field"><label for="piBuyerContact">联系人</label><input id="piBuyerContact"></div>
+                  <div class="field"><label for="piBuyerTel">电话</label><input id="piBuyerTel"></div>
+                  <div class="field"><label for="piBuyerEmail">邮箱</label><input id="piBuyerEmail"></div>
+                  <div class="field"><label for="piBuyerTax">税号/进口商编号</label><input id="piBuyerTax"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-header">
+              <h2 class="section-title">产品明细</h2>
+              <button class="btn" id="piAddItemBtn" type="button">新增产品</button>
+            </div>
+            <div class="section-body">
+              <div class="table-wrap">
+                <table id="piItemTable">
+                  <colgroup>
+                    <col class="pi-product">
+                    <col class="pi-material">
+                    <col class="pi-finish">
+                    <col class="pi-size">
+                    <col class="pi-qty">
+                    <col class="pi-unit">
+                    <col class="pi-price">
+                    <col class="pi-amount">
+                    <col class="pi-remarks">
+                    <col class="row-action">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>产品/型号</th>
+                      <th>材质</th>
+                      <th>表面</th>
+                      <th>尺寸</th>
+                      <th>数量</th>
+                      <th>单位</th>
+                      <th>单价</th>
+                      <th>金额</th>
+                      <th>备注</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-header">
+              <h2 class="section-title">运输与包装</h2>
+            </div>
+            <div class="section-body">
+              <div class="form-grid">
+                <div class="field"><label for="piLoadingPort">起运港</label><input id="piLoadingPort" value="Tianjin / China Port"></div>
+                <div class="field"><label for="piDestination">目的地</label><input id="piDestination" value="Dubai"></div>
+                <div class="field"><label for="piShipment">运输方式</label><input id="piShipment" value="By sea"></div>
+                <div class="field"><label for="piDeliveryTime">交期</label><input id="piDeliveryTime" value="To be confirmed after deposit"></div>
+                <div class="field full-span"><label for="piPacking">包装</label><input id="piPacking" value="Export standard wooden crate packing"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-header">
+              <h2 class="section-title">收款银行信息</h2>
+            </div>
+            <div class="section-body">
+              <div class="form-grid">
+                <div class="field"><label for="piBankBeneficiary">收款人</label><input id="piBankBeneficiary"></div>
+                <div class="field"><label for="piBankName">开户银行</label><input id="piBankName"></div>
+                <div class="field"><label for="piAccountNo">账号</label><input id="piAccountNo"></div>
+                <div class="field"><label for="piSwift">SWIFT</label><input id="piSwift"></div>
+                <div class="field full-span"><label for="piBeneficiaryAddress">收款人地址</label><input id="piBeneficiaryAddress"></div>
+                <div class="field full-span"><label for="piBankAddress">银行地址</label><input id="piBankAddress"></div>
+                <div class="field"><label for="piBankCode">银行代码/IBAN</label><input id="piBankCode"></div>
+                <div class="field"><label for="piPaymentReference">付款备注</label><input id="piPaymentReference"></div>
+                <div class="field full-span"><label for="piBankCharges">银行手续费</label><input id="piBankCharges" value="All bank charges outside seller's bank are for buyer's account unless otherwise agreed."></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="summary-column">
+          <section class="section">
+            <div class="section-header">
+              <h2 class="section-title">PI预览</h2>
+              <span class="pill" id="piTotalPill">USD 0</span>
+            </div>
+            <div class="section-body">
+              <div class="pi-preview" id="piPreview"></div>
+              <div class="status-line" id="piStatusLine"></div>
+            </div>
+          </section>
+          <section class="section">
+            <div class="section-header">
+              <h2 class="section-title">条款与备注</h2>
+            </div>
+            <div class="section-body pi-notes-body">
+              <div class="field">
+                <label for="piTerms">正式条款</label>
+                <textarea id="piTerms"></textarea>
+              </div>
+              <div class="field">
+                <label for="piNotes">额外备注</label>
+                <textarea id="piNotes" placeholder="如特殊付款安排、指定文件、客户要求等"></textarea>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </section>
     </section>
 
   </main>

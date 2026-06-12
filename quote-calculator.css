@@ -44,6 +44,37 @@ textarea {
   padding: 24px 36px;
 }
 
+.app-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.nav-tab {
+  min-height: 38px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.nav-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.app-page {
+  display: none;
+}
+
+.app-page.active {
+  display: block;
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -154,6 +185,15 @@ h1 {
   gap: 12px;
 }
 
+.form-grid.compact-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.full-span {
+  grid-column: 1 / -1;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -246,6 +286,33 @@ table {
 
 .cargo-total {
   width: 100px;
+}
+
+.pi-product {
+  width: 190px;
+}
+
+.pi-material,
+.pi-finish,
+.pi-size {
+  width: 130px;
+}
+
+.pi-qty {
+  width: 78px;
+}
+
+.pi-unit {
+  width: 76px;
+}
+
+.pi-price,
+.pi-amount {
+  width: 120px;
+}
+
+.pi-remarks {
+  width: 170px;
 }
 
 .freight-scheme {
@@ -429,18 +496,18 @@ td select:focus {
   top: 18px;
 }
 
-.summary-column .section:last-child {
+#quotePage .summary-column .section:last-child {
   flex: 1;
   display: flex;
   flex-direction: column;
 }
 
-.summary-column .section:last-child .section-body {
+#quotePage .summary-column .section:last-child .section-body {
   flex: 1;
   display: flex;
 }
 
-.summary-column .section:last-child textarea {
+#quotePage .summary-column .section:last-child textarea {
   flex: 1;
 }
 
@@ -488,6 +555,85 @@ td select:focus {
   gap: 10px;
 }
 
+.two-panel-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.party-panel {
+  min-width: 0;
+}
+
+.party-panel h3 {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.pi-preview {
+  display: grid;
+  gap: 14px;
+  color: var(--ink);
+}
+
+.pi-preview h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.pi-preview-block {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pi-preview-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pi-preview-row .label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pi-preview-row .value {
+  overflow-wrap: anywhere;
+}
+
+.pi-preview-table {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pi-preview-table table {
+  table-layout: auto;
+}
+
+.pi-preview-table th,
+.pi-preview-table td {
+  padding: 7px;
+  font-size: 12px;
+}
+
+.pi-notes-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.pi-notes-body textarea {
+  min-height: 220px;
+  max-height: 320px;
+}
+
 @media (max-width: 1280px) {
   .app {
     padding: 20px;
@@ -511,6 +657,12 @@ td select:focus {
 
   .actions {
     justify-content: flex-start;
+  }
+
+  .two-panel-form,
+  .form-grid.compact-form,
+  .pi-notes-body {
+    grid-template-columns: 1fr;
   }
 }
 
