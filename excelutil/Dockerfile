@@ -20,4 +20,4 @@ WORKDIR /app
 COPY --from=builder /build/excelutil .
 
 EXPOSE 8081
-ENTRYPOINT ["/app/excelutil", "-server"]
+ENTRYPOINT ["/app/excelutil", "-mode", "server"]

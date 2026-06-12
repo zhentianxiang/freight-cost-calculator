@@ -28,6 +28,10 @@ type Inputs struct {
 	Notes          string  `json:"notes"`
 }
 
+var (
+	defaultExclusion = "不包含目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用。"
+	defaultExclusion2 = "Destination customs clearance, duties/taxes, destination port charges, storage, inspection, destination delivery, and other buyer-side local charges are excluded."
+)
 type CargoRow struct {
 	Name      string  `json:"name"`
 	Spec      string  `json:"spec"`
@@ -57,164 +61,13 @@ type Snapshot struct {
 	Freight   []FreightRow `json:"freight"`
 }
 
-func cargoTax(row CargoRow) float64 {
-	return row.UnitPrice * row.Qty * row.TaxRate / 100
-}
-
-func cargoTotal(row CargoRow) float64 {
-	return row.UnitPrice*row.Qty + cargoTax(row)
-}
-
-func totalCargoQty(cargo []CargoRow) float64 {
-	var sum float64
-	for _, row := range cargo {
-		sum += row.Qty
-	}
-	return sum
-}
-
-func quoteUnitUsd(quoteUsd float64, qty float64) float64 {
-	if qty == 0 {
-		return 0
-	}
-	return quoteUsd / qty
-}
-
-func quoteLineUsd(unitUsd float64, qty float64) float64 {
-	return unitUsd * qty
-}
-
-type SchemeSummary struct {
-	Scheme        string
-	Freight       float64
-	TotalCost     float64
-	TargetPrice   float64
-	QuoteRmb      float64
-	Profit        float64
-	Margin        float64
-	Markup        float64
-	HasQuotedCost bool
-}
-
-func calculateSchemes(snap *Snapshot) (goodsCost float64, quoteRmb float64, summaries []SchemeSummary) {
-	inputs := snap.Inputs
-	for _, row := range snap.Cargo {
-		goodsCost += cargoTotal(row)
-	}
-	quoteRmb = inputs.QuoteUsd * inputs.ExchangeRate
-
-	schemeSet := make(map[string]bool)
-	for _, fr := range snap.Freight {
-		if fr.Scheme != "" {
-			schemeSet[fr.Scheme] = true
-		}
-	}
-	var schemeIDs []string
-	for _, s := range snap.Schemes {
-		if schemeSet[s] {
-			schemeIDs = append(schemeIDs, s)
-		}
-	}
-	if len(schemeIDs) == 0 {
-		for s := range schemeSet {
-			schemeIDs = append(schemeIDs, s)
-		}
-	}
-	if len(schemeIDs) == 0 {
-		schemeIDs = []string{"A"}
-	}
-
-	for _, scheme := range schemeIDs {
-		var freight float64
-		for _, fr := range snap.Freight {
-			if fr.Scheme == scheme && fr.Included {
-				freight += fr.Amount
-			}
-		}
-		totalCost := goodsCost + freight
-		targetPrice := totalCost * (1 + inputs.TargetProfit/100)
-		profit := quoteRmb - totalCost
-		margin := 0.0
-		if quoteRmb != 0 {
-			margin = profit / quoteRmb * 100
-		}
-		markup := 0.0
-		if totalCost != 0 {
-			markup = profit / totalCost * 100
-		}
-		var hasQuotedCost bool
-		for _, fr := range snap.Freight {
-			if fr.Scheme == scheme && fr.Included && fr.Amount > 0 {
-				hasQuotedCost = true
-				break
-			}
-		}
-		summaries = append(summaries, SchemeSummary{
-			Scheme:        scheme,
-			Freight:       freight,
-			TotalCost:     totalCost,
-			TargetPrice:   targetPrice,
-			QuoteRmb:      quoteRmb,
-			Profit:        profit,
-			Margin:        margin,
-			Markup:        markup,
-			HasQuotedCost: hasQuotedCost,
-		})
-	}
-	return
-}
-
-func bestScheme(summaries []SchemeSummary) SchemeSummary {
-	var eligible []SchemeSummary
-	for _, s := range summaries {
-		if s.HasQuotedCost {
-			eligible = append(eligible, s)
-		}
-	}
-	candidates := eligible
-	if len(candidates) == 0 {
-		candidates = summaries
-	}
-	best := candidates[0]
-	for _, s := range candidates[1:] {
-		if s.TotalCost < best.TotalCost || (s.TotalCost == best.TotalCost && s.Profit > best.Profit) {
-			best = s
-		}
-	}
-	return best
-}
-
-func tx(lang, zh, en string) string {
-	switch lang {
-	case "en":
-		return en
-	case "bilingual":
-		return zh + " / " + en
-	default:
-		return zh
-	}
-}
-
-func freightName(scheme, lang string) string {
-	return scheme + tx(lang, "货代", "Forwarder")
-}
-
-func yesNo(val bool, lang string) string {
-	if val {
-		return tx(lang, "是", "Yes")
-	}
-	return tx(lang, "否", "No")
-}
-
-func fmtMoney(v float64) string {
-	if math.Abs(v) >= 1e8 {
-		return fmt.Sprintf("%.2f", v)
-	}
-	return fmt.Sprintf("%.0f", math.Round(v))
-}
-
-func fmtPct(v float64) string {
-	return fmt.Sprintf("%.2f%%", v)
+type SummaryRow struct {
+	Scheme      string
+	Freight     float64
+	TotalCost   float64
+	TargetPrice float64
+	Profit      float64
+	Margin      float64
 }
 
 type Styles struct {
@@ -222,12 +75,12 @@ type Styles struct {
 	HeaderStyle        int
 	SubHeaderStyle     int
 	DataStyle          int
+	AltDataStyle       int
 	MoneyStyle         int
+	AltMoneyStyle      int
 	HighlightStyle     int
 	BoldStyle          int
 	NoteStyle          int
-	AltDataStyle       int
-	AltMoneyStyle      int
 	SectionTitleStyle  int
 	TotalStyle         int
 	TotalMoneyStyle    int
@@ -235,6 +88,93 @@ type Styles struct {
 	CustomerTitleStyle int
 	CustomerLabelStyle int
 	CustomerValueStyle int
+}
+
+func main() {
+	mode := flag.String("mode", "server", "Run mode: server or cli")
+	flag.Parse()
+
+	if *mode == "server" {
+		startServer()
+	} else {
+		runCLI()
+	}
+}
+
+func calculateSchemes(snap *Snapshot) (float64, float64, []SummaryRow) {
+	goodsCost := 0.0
+	for _, c := range snap.Cargo {
+		goodsCost += cargoTotal(c)
+	}
+
+	quoteRmb := snap.Inputs.QuoteUsd * snap.Inputs.ExchangeRate
+	var summaries []SummaryRow
+
+	for _, s := range snap.Schemes {
+		freight := 0.0
+		for _, f := range snap.Freight {
+			if f.Scheme == s && f.Included {
+				freight += f.Amount
+			}
+		}
+		totalCost := goodsCost + freight
+		targetPrice := totalCost * (1 + snap.Inputs.TargetProfit/100)
+		profit := quoteRmb - totalCost
+		margin := 0.0
+		if quoteRmb > 0 {
+			margin = (profit / quoteRmb) * 100
+		}
+
+		summaries = append(summaries, SummaryRow{
+			Scheme:      s,
+			Freight:     freight,
+			TotalCost:   totalCost,
+			TargetPrice: targetPrice,
+			Profit:      profit,
+			Margin:      margin,
+		})
+	}
+	return goodsCost, quoteRmb, summaries
+}
+
+func bestScheme(summaries []SummaryRow) SummaryRow {
+	if len(summaries) == 0 {
+		return SummaryRow{}
+	}
+	best := summaries[0]
+	for _, s := range summaries {
+		if s.TotalCost < best.TotalCost {
+			best = s
+		}
+	}
+	return best
+}
+
+func totalCargoQty(cargo []CargoRow) float64 {
+	total := 0.0
+	for _, c := range cargo {
+		total += c.Qty
+	}
+	return total
+}
+
+func cargoTax(c CargoRow) float64 {
+	return c.UnitPrice * c.Qty * (c.TaxRate / 100)
+}
+
+func cargoTotal(c CargoRow) float64 {
+	return (c.UnitPrice * c.Qty) + cargoTax(c)
+}
+
+func quoteUnitUsd(totalUsd, totalQty float64) float64 {
+	if totalQty == 0 {
+		return 0
+	}
+	return totalUsd / totalQty
+}
+
+func quoteLineUsd(c CargoRow, unitUsd float64) float64 {
+	return c.Qty * unitUsd
 }
 
 func createStyles(f *excelize.File) *Styles {
@@ -413,21 +353,6 @@ func createStyles(f *excelize.File) *Styles {
 	return s
 }
 
-
-func setVal(f *excelize.File, sheet, cell string, val interface{}, styleID int) {
-	f.SetCellValue(sheet, cell, val)
-	if styleID >= 0 {
-		f.SetCellStyle(sheet, cell, cell, styleID)
-	}
-}
-
-func setMoney(f *excelize.File, sheet, cell string, val float64, styleID int) {
-	f.SetCellFloat(sheet, cell, math.Round(val), 0, 64)
-	if styleID >= 0 {
-		f.SetCellStyle(sheet, cell, cell, styleID)
-	}
-}
-
 func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	inputs := snap.Inputs
 	goodsCost, quoteRmb, summaries := calculateSchemes(snap)
@@ -435,25 +360,27 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	qty := totalCargoQty(snap.Cargo)
 	unitUsd := quoteUnitUsd(inputs.QuoteUsd, qty)
 
-	sheet1 := safeSheetName(tx(lang, "报价汇总", "Summary"))
+	sheet1 := safeSheetName(tx(lang, "内部核算汇总", "Internal Master Summary"))
 	f.SetSheetName("Sheet1", sheet1)
 
-	// 统一列宽，使布局更舒展
+	// 设置列宽以适应最宽的货物明细表（A-M共13列）
 	f.SetColWidth(sheet1, "A", "A", 25)
-	f.SetColWidth(sheet1, "B", "F", 18)
+	f.SetColWidth(sheet1, "B", "B", 18)
+	f.SetColWidth(sheet1, "C", "F", 12)
+	f.SetColWidth(sheet1, "G", "M", 15)
 
 	row := 1
-	// 标题跨全列
-	setVal(f, sheet1, fmt.Sprintf("A%d", row), inputs.ProjectName+" "+tx(lang, "报价测算汇总", "Quotation Summary"), s.TitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row), s.TitleStyle)
+	// 1. 标题跨全列 (A:M)
+	setVal(f, sheet1, fmt.Sprintf("A%d", row), inputs.ProjectName+" "+tx(lang, "完整报价测算报告", "Complete Quotation Report"), s.TitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.TitleStyle)
 	row++
-	row++ // 增加留白
+	row++
 
-	// 基础信息部分
+	// 2. 基础信息
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "基础信息", "Basic Info"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
 	row++
 
 	infoRows := []struct {
@@ -474,16 +401,16 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		}
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), ir.label, s.BoldStyle)
 		setVal(f, sheet1, fmt.Sprintf("B%d", row), ir.value, s.DataStyle)
-		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("F%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("F%d", row), s.DataStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row), s.DataStyle)
 		row++
 	}
 	row++
 
-	// 利润测算部分
+	// 3. 利润测算汇总
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "利润测算", "Profit Analysis"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
 	row++
 
 	profitRows := []struct {
@@ -498,101 +425,143 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	for _, pr := range profitRows {
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), pr.label, s.BoldStyle)
 		setMoney(f, sheet1, fmt.Sprintf("B%d", row), pr.value, pr.style)
-		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("F%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("F%d", row), pr.style)
+		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row), pr.style)
 		row++
 	}
 
-	// 推荐方案高亮行
 	bestMsg := fmt.Sprintf("%s: %s | %s: %s / %s: %s",
 		tx(lang, "推荐方案", "Best Option"), freightName(best.Scheme, lang),
 		tx(lang, "总成本", "Total Cost"), fmtMoney(best.TotalCost),
 		tx(lang, "净利润", "Net Profit"), fmtMoney(best.Profit))
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), bestMsg, s.HighlightStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row), s.HighlightStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.HighlightStyle)
 	row++
 	row++
 
-	// 货物清单部分（新加入汇总页）
-	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "货物清单", "Cargo List"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row), s.SectionTitleStyle)
+	// 4. 详细货物清单 (A:M)
+	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "货物明细", "Cargo Details"), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
 	row++
 
-	cargoHeadersSmall := []string{
+	cargoHeaders := []string{
 		tx(lang, "货物名称", "Cargo"),
 		tx(lang, "规格", "Spec"),
+		tx(lang, "长(m)", "L(m)"),
+		tx(lang, "高(m)", "H(m)"),
+		tx(lang, "宽(m)", "W(m)"),
+		tx(lang, "重量(kg)", "Wt(kg)"),
 		tx(lang, "数量", "Qty"),
-		tx(lang, "单价RMB", "Unit Price"),
-		tx(lang, "合计RMB", "Total"),
+		tx(lang, "单价RMB", "Price"),
+		tx(lang, "税率%", "Tax%"),
+		tx(lang, "税费RMB", "Tax Amt"),
+		tx(lang, "合计RMB", "Total RMB"),
+		tx(lang, "单价USD", "Unit USD"),
+		tx(lang, "金额USD", "Total USD"),
 	}
-	for i, h := range cargoHeadersSmall {
+	for i, h := range cargoHeaders {
 		col := string(rune('A' + i))
 		setVal(f, sheet1, fmt.Sprintf("%s%d", col, row), h, s.HeaderStyle)
 	}
-	// 最后一列跨两格
-	setVal(f, sheet1, fmt.Sprintf("F%d", row), "", s.HeaderStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("E%d", row), fmt.Sprintf("F%d", row))
 	row++
 
 	for idx, cr := range snap.Cargo {
 		alt := idx%2 == 1
-		dataSt := s.DataStyle
-		moneySt := s.MoneyStyle
+		st := s.DataStyle
+		mst := s.MoneyStyle
 		if alt {
-			dataSt = s.AltDataStyle
-			moneySt = s.AltMoneyStyle
+			st = s.AltDataStyle
+			mst = s.AltMoneyStyle
 		}
-		setVal(f, sheet1, fmt.Sprintf("A%d", row), cr.Name, dataSt)
-		setVal(f, sheet1, fmt.Sprintf("B%d", row), cr.Spec, dataSt)
-		setMoney(f, sheet1, fmt.Sprintf("C%d", row), cr.Qty, moneySt)
-		setMoney(f, sheet1, fmt.Sprintf("D%d", row), cr.UnitPrice, moneySt)
-		setMoney(f, sheet1, fmt.Sprintf("E%d", row), cargoTotal(cr), moneySt)
-		f.MergeCell(sheet1, fmt.Sprintf("E%d", row), fmt.Sprintf("F%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("F%d", row), moneySt)
+		setVal(f, sheet1, fmt.Sprintf("A%d", row), cr.Name, st)
+		setVal(f, sheet1, fmt.Sprintf("B%d", row), cr.Spec, st)
+		setMoney(f, sheet1, fmt.Sprintf("C%d", row), cr.Length, mst)
+		setMoney(f, sheet1, fmt.Sprintf("D%d", row), cr.Height, mst)
+		setMoney(f, sheet1, fmt.Sprintf("E%d", row), cr.Width, mst)
+		setMoney(f, sheet1, fmt.Sprintf("F%d", row), cr.Weight, mst)
+		setMoney(f, sheet1, fmt.Sprintf("G%d", row), cr.Qty, mst)
+		setMoney(f, sheet1, fmt.Sprintf("H%d", row), cr.UnitPrice, mst)
+		setVal(f, sheet1, fmt.Sprintf("I%d", row), fmtPct(cr.TaxRate), st)
+		setMoney(f, sheet1, fmt.Sprintf("J%d", row), cargoTax(cr), mst)
+		setMoney(f, sheet1, fmt.Sprintf("K%d", row), cargoTotal(cr), mst)
+		setMoney(f, sheet1, fmt.Sprintf("L%d", row), unitUsd, mst)
+		setMoney(f, sheet1, fmt.Sprintf("M%d", row), quoteLineUsd(cr, unitUsd), mst)
 		row++
 	}
 	row++
 
-	// 方案对比部分
-	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "方案对比", "Option Comparison"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("F%d", row), s.SectionTitleStyle)
+	// 5. 详细货代费用拆解
+	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "货代费用明细", "Freight Itemization"), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
 	row++
 
-	headers := []string{
+	for _, scheme := range snap.Schemes {
+		// 方案子标题
+		setVal(f, sheet1, fmt.Sprintf("A%d", row), freightName(scheme, lang), s.SubHeaderStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SubHeaderStyle)
+		row++
+
+		schemeItems := filterFreight(snap.Freight, scheme)
+		setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "费用项目", "Item"), s.HeaderStyle)
+		setVal(f, sheet1, fmt.Sprintf("B%d", row), tx(lang, "金额RMB", "Amount"), s.HeaderStyle)
+		setVal(f, sheet1, fmt.Sprintf("C%d", row), tx(lang, "计入报价", "Included"), s.HeaderStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row), s.HeaderStyle)
+		row++
+
+		for _, item := range schemeItems {
+			setVal(f, sheet1, fmt.Sprintf("A%d", row), item.Item, s.DataStyle)
+			setMoney(f, sheet1, fmt.Sprintf("B%d", row), item.Amount, s.MoneyStyle)
+			setVal(f, sheet1, fmt.Sprintf("C%d", row), yesNo(item.Included, lang), s.DataStyle)
+			f.MergeCell(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row))
+			f.SetCellStyle(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row), s.DataStyle)
+			row++
+		}
+		row++
+	}
+
+	// 6. 方案最终对比
+	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "方案最终对比", "Final Comparison"), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
+	row++
+
+	compHeaders := []string{
 		tx(lang, "方案", "Option"),
-		tx(lang, "物流费", "Logistics"),
+		tx(lang, "物流总费", "Logistics"),
 		tx(lang, "总成本", "Total Cost"),
-		tx(lang, "目标价", "Target Price"),
+		tx(lang, "目标价格", "Target"),
 		tx(lang, "净利润", "Net Profit"),
 		tx(lang, "净利率", "Margin"),
 	}
-	for i, h := range headers {
+	for i, h := range compHeaders {
 		col := string(rune('A' + i))
 		setVal(f, sheet1, fmt.Sprintf("%s%d", col, row), h, s.HeaderStyle)
 	}
+	f.MergeCell(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row), s.HeaderStyle)
 	row++
 
 	for _, summ := range summaries {
 		isBest := summ.Scheme == best.Scheme
-		dataSt := s.DataStyle
-		moneySt := s.MoneyStyle
-		if isBest {
-			dataSt = s.HighlightStyle
-			moneySt = s.HighlightStyle
-		}
-		setVal(f, sheet1, fmt.Sprintf("A%d", row), freightName(summ.Scheme, lang), dataSt)
-		setMoney(f, sheet1, fmt.Sprintf("B%d", row), summ.Freight, moneySt)
-		setMoney(f, sheet1, fmt.Sprintf("C%d", row), summ.TotalCost, moneySt)
-		setMoney(f, sheet1, fmt.Sprintf("D%d", row), summ.TargetPrice, moneySt)
-		setMoney(f, sheet1, fmt.Sprintf("E%d", row), summ.Profit, moneySt)
-		st := moneySt
+		st := s.DataStyle
+		mst := s.MoneyStyle
 		if isBest {
 			st = s.HighlightStyle
+			mst = s.HighlightStyle
 		}
+		setVal(f, sheet1, fmt.Sprintf("A%d", row), freightName(summ.Scheme, lang), st)
+		setMoney(f, sheet1, fmt.Sprintf("B%d", row), summ.Freight, mst)
+		setMoney(f, sheet1, fmt.Sprintf("C%d", row), summ.TotalCost, mst)
+		setMoney(f, sheet1, fmt.Sprintf("D%d", row), summ.TargetPrice, mst)
+		setMoney(f, sheet1, fmt.Sprintf("E%d", row), summ.Profit, mst)
 		setVal(f, sheet1, fmt.Sprintf("F%d", row), fmtPct(summ.Margin), st)
+		f.MergeCell(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row), st)
 		row++
 	}
 	row++
@@ -600,154 +569,20 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	if inputs.Notes != "" {
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "备注", "Notes"), s.BoldStyle)
 		setVal(f, sheet1, fmt.Sprintf("B%d", row), inputs.Notes, s.NoteStyle)
-		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("F%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("F%d", row), s.NoteStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row), s.NoteStyle)
 		row++
 	}
+}
 
-	sheet2 := safeSheetName(tx(lang, "货物成本明细", "Cargo Details"))
-	f.NewSheet(sheet2)
-
-
-	cargoHeaders := []string{
-		tx(lang, "货物名称", "Cargo"),
-		tx(lang, "规格", "Specification"),
-		tx(lang, "长(m)", "Length(m)"),
-		tx(lang, "高(m)", "Height(m)"),
-		tx(lang, "宽(m)", "Width(m)"),
-		tx(lang, "单箱KG", "KG/Unit"),
-		tx(lang, "数量", "Qty"),
-		tx(lang, "单价RMB", "Unit Price"),
-		tx(lang, "税率%", "Tax Rate"),
-		tx(lang, "税费RMB", "Tax"),
-		tx(lang, "合计RMB", "Total"),
-		tx(lang, "平均报价USD", "Avg Quote"),
-		tx(lang, "报价金额USD", "Quote Amt"),
-	}
-
-	widths := []float64{18, 16, 10, 10, 10, 12, 8, 14, 10, 14, 16, 14, 16}
-	for i, w := range widths {
-		col := string(rune('A' + i))
-		f.SetColWidth(sheet2, col, col, w)
-	}
-
-	// 标题行
-	title := inputs.ProjectName + " " + tx(lang, "货物成本明细", "Cargo Cost Details")
-	setVal(f, sheet2, "A1", title, s.TitleStyle)
-	f.MergeCell(sheet2, "A1", "M1")
-
-	vHeader := 2
-	for i, h := range cargoHeaders {
-		col := string(rune('A' + i))
-		setVal(f, sheet2, fmt.Sprintf("%s%d", col, vHeader), h, s.HeaderStyle)
-	}
-
-	row = 3
-	for idx, cr := range snap.Cargo {
-		alt := idx%2 == 1
-		dataSt := s.DataStyle
-		moneySt := s.MoneyStyle
-		if alt {
-			dataSt = s.AltDataStyle
-			moneySt = s.AltMoneyStyle
+func filterFreight(items []FreightRow, scheme string) []FreightRow {
+	var out []FreightRow
+	for _, it := range items {
+		if it.Scheme == scheme {
+			out = append(out, it)
 		}
-		setVal(f, sheet2, fmt.Sprintf("A%d", row), cr.Name, dataSt)
-		setVal(f, sheet2, fmt.Sprintf("B%d", row), cr.Spec, dataSt)
-		setVal(f, sheet2, fmt.Sprintf("C%d", row), cr.Length, moneySt)
-		setVal(f, sheet2, fmt.Sprintf("D%d", row), cr.Height, moneySt)
-		setVal(f, sheet2, fmt.Sprintf("E%d", row), cr.Width, moneySt)
-		setMoney(f, sheet2, fmt.Sprintf("F%d", row), cr.Weight, moneySt)
-		setMoney(f, sheet2, fmt.Sprintf("G%d", row), cr.Qty, moneySt)
-		setMoney(f, sheet2, fmt.Sprintf("H%d", row), cr.UnitPrice, moneySt)
-		setVal(f, sheet2, fmt.Sprintf("I%d", row), cr.TaxRate, moneySt)
-		setMoney(f, sheet2, fmt.Sprintf("J%d", row), cargoTax(cr), moneySt)
-		setMoney(f, sheet2, fmt.Sprintf("K%d", row), cargoTotal(cr), moneySt)
-		setMoney(f, sheet2, fmt.Sprintf("L%d", row), unitUsd, moneySt)
-		setMoney(f, sheet2, fmt.Sprintf("M%d", row), quoteLineUsd(unitUsd, cr.Qty), moneySt)
-		row++
 	}
-
-	setVal(f, sheet2, fmt.Sprintf("A%d", row), tx(lang, "合计", "Total"), s.TotalStyle)
-	for colIdx := 1; colIdx <= 12; colIdx++ {
-		col := string(rune('A' + colIdx))
-		setVal(f, sheet2, fmt.Sprintf("%s%d", col, row), "", s.TotalStyle)
-	}
-	setMoney(f, sheet2, fmt.Sprintf("K%d", row), goodsCost, s.TotalMoneyStyle)
-	setVal(f, sheet2, fmt.Sprintf("M%d", row), inputs.QuoteUsd, s.TotalMoneyStyle)
-	row++
-
-	sheet3 := safeSheetName(tx(lang, "货代费用", "Freight Details"))
-	f.NewSheet(sheet3)
-
-	f.SetColWidth(sheet3, "A", "A", 24)
-	f.SetColWidth(sheet3, "B", "B", 14)
-	f.SetColWidth(sheet3, "C", "C", 12)
-
-	setVal(f, sheet3, "A1", tx(lang, "货代费用明细", "Freight Forwarder Details"), s.TitleStyle)
-	f.MergeCell(sheet3, "A1", "D1")
-
-	vHeader = 2
-	ftHeaders := []string{
-		tx(lang, "方案", "Option"),
-		tx(lang, "费用项目", "Cost Item"),
-		tx(lang, "金额RMB", "Amount"),
-		tx(lang, "计入报价", "Included"),
-	}
-	for i, h := range ftHeaders {
-		col := string(rune('A' + i))
-		if col > "D" {
-			break
-		}
-		setVal(f, sheet3, fmt.Sprintf("%s%d", col, vHeader), h, s.HeaderStyle)
-	}
-	f.SetColWidth(sheet3, "D", "D", 12)
-
-	row = 3
-	for _, scheme := range snap.Schemes {
-		groupRows := []FreightRow{}
-		for _, fr := range snap.Freight {
-			if fr.Scheme == scheme {
-				groupRows = append(groupRows, fr)
-			}
-		}
-		if len(groupRows) == 0 {
-			continue
-		}
-
-		setVal(f, sheet3, fmt.Sprintf("A%d", row), freightName(scheme, lang), s.SubHeaderStyle)
-		setVal(f, sheet3, fmt.Sprintf("B%d", row), "", s.SubHeaderStyle)
-		setVal(f, sheet3, fmt.Sprintf("C%d", row), "", s.SubHeaderStyle)
-		setVal(f, sheet3, fmt.Sprintf("D%d", row), "", s.SubHeaderStyle)
-		row++
-
-		for idx, fr := range groupRows {
-			alt := idx%2 == 1
-			dataSt := s.DataStyle
-			moneySt := s.MoneyStyle
-			if alt {
-				dataSt = s.AltDataStyle
-				moneySt = s.AltMoneyStyle
-			}
-			setVal(f, sheet3, fmt.Sprintf("A%d", row), "", dataSt)
-			setVal(f, sheet3, fmt.Sprintf("B%d", row), fr.Item, dataSt)
-			setMoney(f, sheet3, fmt.Sprintf("C%d", row), math.Round(fr.Amount), moneySt)
-			setVal(f, sheet3, fmt.Sprintf("D%d", row), yesNo(fr.Included, lang), dataSt)
-			row++
-		}
-
-		setVal(f, sheet3, fmt.Sprintf("A%d", row), tx(lang, "小计", "Subtotal"), s.TotalStyle)
-		setVal(f, sheet3, fmt.Sprintf("B%d", row), "", s.TotalStyle)
-		var schemeTotal float64
-		for _, fr := range groupRows {
-			if fr.Included {
-				schemeTotal += fr.Amount
-			}
-		}
-		setMoney(f, sheet3, fmt.Sprintf("C%d", row), math.Round(schemeTotal), s.TotalMoneyStyle)
-		setVal(f, sheet3, fmt.Sprintf("D%d", row), "", s.TotalStyle)
-		row++
-		row++
-	}
+	return out
 }
 
 func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
@@ -844,7 +679,7 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		setMoney(f, sheet, fmt.Sprintf("F%d", row), cr.Weight, moneySt)
 		setMoney(f, sheet, fmt.Sprintf("G%d", row), cr.Qty, moneySt)
 		setMoney(f, sheet, fmt.Sprintf("H%d", row), unitUsd, moneySt)
-		setMoney(f, sheet, fmt.Sprintf("I%d", row), quoteLineUsd(unitUsd, cr.Qty), moneySt)
+		setMoney(f, sheet, fmt.Sprintf("I%d", row), quoteLineUsd(cr, unitUsd), moneySt)
 		row++
 	}
 
@@ -881,9 +716,6 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("I%d", row))
 		row++
 	}
-	row++
-	row++
-
 }
 
 func getCustomerTermText(term, destination, lang string) string {
@@ -912,9 +744,6 @@ func getExclusionText(lang string) string {
 		"不包含目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用。",
 		"Destination customs clearance, duties/taxes, destination port charges, storage, inspection, destination delivery, and other buyer-side local charges are excluded.")
 }
-
-const defaultExclusion = "目的港清关、关税、目的港杂费、目的地派送等费用默认不包含在CFR报价内。"
-const defaultExclusion2 = "目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用默认不包含在CFR报价内。"
 
 func safeSheetName(name string) string {
 	replacer := strings.NewReplacer("\\", " ", "/", " ", "?", " ", "*", " ", "[", " ", "]", " ", ":", " ")
@@ -958,8 +787,6 @@ func fixDefaults(snap *Snapshot) {
 		snap.Schemes = dedup
 	}
 }
-
-// ── HTTP 服务器模式 ──────────────────────────────────────────────────────
 
 const storageDir = "./data"
 
@@ -1017,10 +844,10 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+	fixDefaults(&snap)
 	if snap.ID == "" {
-		snap.ID = fmt.Sprintf("%d", os.Getpid()) // Fallback
+		snap.ID = fmt.Sprintf("%d", os.Getpid())
 	}
-	// 清理文件名
 	safeID := strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
 			return r
@@ -1102,125 +929,103 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mode := r.URL.Query().Get("mode")
-	if mode == "" {
-		mode = "customer"
-	}
-	lang := r.URL.Query().Get("lang")
-	if lang == "" {
-		lang = "zh"
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-
 	var snap Snapshot
-	if err := json.Unmarshal(body, &snap); err != nil {
-		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&snap); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
 	fixDefaults(&snap)
+	mode := r.URL.Query().Get("mode")
+	lang := r.URL.Query().Get("lang")
 
 	f := excelize.NewFile()
-	styles := createStyles(f)
+	defer f.Close()
 
-	if mode == "internal" {
-		writeInternal(f, &snap, lang, styles)
+	s := createStyles(f)
+
+	if mode == "customer" {
+		writeCustomer(f, &snap, lang, s)
 	} else {
-		writeCustomer(f, &snap, lang, styles)
-	}
-
-	// 清理非法字符做文件名
-	name := strings.Map(func(r rune) rune {
-		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
-			return '_'
-		}
-		return r
-	}, snap.Inputs.ProjectName)
-	if name == "" {
-		name = "Quotation"
+		writeInternal(f, &snap, lang, s)
 	}
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s_%s.xlsx"`, name, mode))
-
-	if _, err := f.WriteTo(w); err != nil {
-		log.Printf("写入 Excel 响应失败: %v", err)
+	w.Header().Set("Content-Disposition", "attachment; filename=quotation.xlsx")
+	if err := f.Write(w); err != nil {
+		http.Error(w, "Failed to generate Excel", http.StatusInternalServerError)
 	}
 }
 
-func main() {
-	serverMode := flag.Bool("server", false, "启动 HTTP 服务器模式")
-	inputFile := flag.String("i", "", "输入 JSON 文件（默认 stdin）")
-	outputFile := flag.String("o", "", "输出 .xlsx 文件（默认 stdout）")
-	mode := flag.String("mode", "customer", "导出模式：internal（内部留存版）| customer（客户版，默认）")
-	lang := flag.String("lang", "zh", "语言：zh | en | bilingual")
-	flag.Parse()
-
-	if *serverMode {
-		startServer()
-		return
-	}
-
-	var data []byte
-	var err error
-	if *inputFile != "" {
-		data, err = os.ReadFile(*inputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "读取输入文件失败: %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		data, err = io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "读取标准输入失败: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
+func runCLI() {
 	var snap Snapshot
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		log.Fatalf("Failed to read stdin: %v", err)
+	}
 	if err := json.Unmarshal(data, &snap); err != nil {
-		fmt.Fprintf(os.Stderr, "JSON 解析失败: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to parse JSON: %v", err)
 	}
 
 	fixDefaults(&snap)
+	mode_type := flag.String("mode_type", "internal", "customer or internal")
+	lang := flag.String("lang", "zh", "zh, en, or bilingual")
+	flag.Parse()
 
 	f := excelize.NewFile()
 	s := createStyles(f)
 
-	if *mode == "internal" {
-		writeInternal(f, &snap, *lang, s)
-	} else {
+	if *mode_type == "customer" {
 		writeCustomer(f, &snap, *lang, s)
-	}
-
-	var buf io.Writer
-	var outFile *os.File
-	if *outputFile != "" {
-		outFile, err = os.Create(*outputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "创建输出文件失败: %v\n", err)
-			os.Exit(1)
-		}
-		defer outFile.Close()
-		buf = outFile
 	} else {
-		buf = os.Stdout
+		writeInternal(f, &snap, *lang, s)
 	}
 
-	if _, err := f.WriteTo(buf); err != nil {
-		fmt.Fprintf(os.Stderr, "写入 Excel 失败: %v\n", err)
-		os.Exit(1)
+	if err := f.SaveAs("output.xlsx"); err != nil {
+		log.Fatalf("Failed to save excel: %v", err)
 	}
+	fmt.Fprintf(os.Stderr, "✓ 已生成 %s 版报价单\n", *mode_type)
+}
 
-	var schemeLabels []string
-	for _, s := range snap.Schemes {
-		schemeLabels = append(schemeLabels, s)
+func setVal(f *excelize.File, sheet, cell string, val interface{}, styleID int) {
+	f.SetCellValue(sheet, cell, val)
+	if styleID >= 0 {
+		f.SetCellStyle(sheet, cell, cell, styleID)
 	}
-	fmt.Fprintf(os.Stderr, "✓ 已生成 %s 版报价单（%s）\n", *mode, strings.Join(schemeLabels, ", "))
+}
+
+func setMoney(f *excelize.File, sheet, cell string, val float64, styleID int) {
+	f.SetCellValue(sheet, cell, math.Round(val*100)/100)
+	if styleID >= 0 {
+		f.SetCellStyle(sheet, cell, cell, styleID)
+	}
+}
+
+func fmtMoney(v float64) string {
+	return fmt.Sprintf("%.2f", v)
+}
+
+func fmtPct(v float64) string {
+	return fmt.Sprintf("%.2f%%", v)
+}
+
+func tx(lang, zh, en string) string {
+	if lang == "en" {
+		return en
+	}
+	if lang == "bilingual" {
+		return fmt.Sprintf("%s / %s", zh, en)
+	}
+	return zh
+}
+
+func yesNo(v bool, lang string) string {
+	if v {
+		return tx(lang, "是", "Yes")
+	}
+	return tx(lang, "否", "No")
+}
+
+func freightName(scheme, lang string) string {
+	return scheme + tx(lang, "货代", " Forwarder")
 }
