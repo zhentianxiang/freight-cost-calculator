@@ -9,7 +9,7 @@ RUN go mod download
 
 # 复制源码并编译
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o excelutil .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o excelutil ./cmd/server
 
 # ── 阶段 2：运行 ──────────────────────────────────────────────────────────
 FROM alpine:3.21
@@ -20,4 +20,4 @@ WORKDIR /app
 COPY --from=builder /build/excelutil .
 
 EXPOSE 8081
-ENTRYPOINT ["/app/excelutil", "-mode", "server"]
+ENTRYPOINT ["/app/excelutil"]
