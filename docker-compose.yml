@@ -20,7 +20,7 @@ services:
       dockerfile: nginx/Dockerfile
     container_name: excelutil-nginx
     ports:
-      - "8080:80"
+      - "8888:80"
     depends_on:
       - go-backend
     networks:

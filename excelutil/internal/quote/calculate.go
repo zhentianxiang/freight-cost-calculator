@@ -1,14 +1,12 @@
 package quote
 
-func CalculateSchemes(snap *Snapshot) (float64, float64, []SummaryRow) {
+func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 	goodsCost := 0.0
 	for _, c := range snap.Cargo {
 		goodsCost += cargoTotal(c)
 	}
 
-	quoteRmb := snap.Inputs.QuoteUsd * snap.Inputs.ExchangeRate
 	var summaries []SummaryRow
-
 	for _, s := range snap.Schemes {
 		freight := 0.0
 		for _, f := range snap.Freight {
@@ -17,7 +15,15 @@ func CalculateSchemes(snap *Snapshot) (float64, float64, []SummaryRow) {
 			}
 		}
 		totalCost := goodsCost + freight
-		targetPrice := totalCost * (1 + snap.Inputs.TargetProfit/100)
+
+		// 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
+		quoteRmb := totalCost / (1 - snap.Inputs.TargetProfit/100)
+		quoteUsd := 0.0
+		if snap.Inputs.ExchangeRate > 0 {
+			quoteUsd = quoteRmb / snap.Inputs.ExchangeRate
+		}
+
+		targetPrice := quoteRmb
 		profit := quoteRmb - totalCost
 		margin := 0.0
 		if quoteRmb > 0 {
@@ -29,11 +35,13 @@ func CalculateSchemes(snap *Snapshot) (float64, float64, []SummaryRow) {
 			Freight:     freight,
 			TotalCost:   totalCost,
 			TargetPrice: targetPrice,
+			QuoteUsd:    quoteUsd,
+			QuoteRmb:    quoteRmb,
 			Profit:      profit,
 			Margin:      margin,
 		})
 	}
-	return goodsCost, quoteRmb, summaries
+	return goodsCost, summaries
 }
 
 func bestScheme(summaries []SummaryRow) SummaryRow {

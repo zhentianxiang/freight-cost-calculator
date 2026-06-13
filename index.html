@@ -73,12 +73,11 @@
                 </div>
               </div>
               <div class="field">
-                <label for="quoteUsd">最终客户报价(USD)</label>
-                <input id="quoteUsd" class="num" type="number" step="1" value="35500">
-              </div>
-              <div class="field">
                 <label for="targetProfit">目标利润率</label>
-                <input id="targetProfit" class="num" type="number" step="0.01" value="15">
+                <div class="rate-input">
+                  <input id="targetProfit" class="num" type="number" step="0.1" value="15">
+                  <span class="unit">%</span>
+                </div>
               </div>
               </div>
           </div>
@@ -197,9 +196,18 @@
                 <div class="label">货物总成本</div>
                 <div class="value" id="goodsCost">¥0</div>
               </div>
-              <div class="metric">
-                <div class="label">最终报价折合</div>
-                <div class="value" id="quoteRmb">¥0</div>
+              <div class="metric highlight">
+                <div class="label">最终报价</div>
+                <div class="value-group">
+                  <div class="value-sub">
+                    <span class="currency">USD</span>
+                    <span id="finalQuoteUsd">0</span>
+                  </div>
+                  <div class="value-sub">
+                    <span class="currency">RMB</span>
+                    <span id="finalQuoteRmb">¥0</span>
+                  </div>
+                </div>
               </div>
               <div class="metric amber">
                 <div class="label">最终采用总成本</div>
@@ -226,7 +234,7 @@
                     <th>方案</th>
                     <th>物流费</th>
                     <th>总成本</th>
-                    <th>15%价</th>
+                    <th>报价USD</th>
                     <th>净利润</th>
                     <th>净利率</th>
                   </tr>

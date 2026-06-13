@@ -75,8 +75,10 @@ function totalCargoQty() {
 }
 
 function quoteUnitUsd() {
+  const result = calculate();
+  const selected = getBestScheme(result.schemes) || result.schemes[0];
   const qty = totalCargoQty();
-  return qty ? cleanNum($("quoteUsd").value) / qty : 0;
+  return qty ? selected.quoteUsd / qty : 0;
 }
 
 function quoteLineUsd(row) {
@@ -92,7 +94,6 @@ function getInputs() {
     destination: $("destination").value.trim(),
     validUntil: $("validUntil").value.trim(),
     exchangeRate: cleanNum($("exchangeRate").value),
-    quoteUsd: cleanNum($("quoteUsd").value),
     targetProfit: cleanNum($("targetProfit").value),
     selectedScheme: $("selectedScheme").value,
     notes: $("notes").value.trim()
@@ -108,7 +109,6 @@ function getRawInputs() {
     destination: $("destination").value.trim(),
     validUntil: $("validUntil").value.trim(),
     exchangeRate: $("exchangeRate").value,
-    quoteUsd: $("quoteUsd").value,
     targetProfit: $("targetProfit").value,
     selectedScheme: $("selectedScheme").value,
     notes: $("notes").value
@@ -226,24 +226,31 @@ function getNextSchemeId() {
 }
 
 function calculate() {
-  renderSchemeOptions();
   const inputs = getInputs();
   const goodsCost = state.cargo.reduce((sum, row) => sum + cargoTotal(row), 0);
-  const quoteRmb = inputs.quoteUsd * inputs.exchangeRate;
   const schemes = getSummarySchemeIds().map((scheme) => {
     const rows = state.freight.filter((row) => row.scheme === scheme);
     const freight = state.freight
       .filter((row) => row.scheme === scheme && row.included)
       .reduce((sum, row) => sum + cleanNum(row.amount), 0);
     const totalCost = goodsCost + freight;
-    const targetPrice = totalCost * (1 + inputs.targetProfit / 100);
+    
+    // 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
+    const profitRate = cleanNum(inputs.targetProfit);
+    const divisor = 1 - profitRate / 100;
+    // 保护：防止除以0或利润率过高导致报价异常，若利润率>=100则采用成本加成方式兜底
+    const quoteRmb = divisor > 0.01 ? totalCost / divisor : totalCost * (1 + profitRate / 100);
+    
+    const quoteUsd = inputs.exchangeRate > 0 ? quoteRmb / inputs.exchangeRate : 0;
+    
+    const targetPrice = quoteRmb;
     const profit = quoteRmb - totalCost;
-    const margin = quoteRmb ? profit / quoteRmb * 100 : 0;
-    const markup = totalCost ? profit / totalCost * 100 : 0;
+    const margin = quoteRmb > 0 ? (profit / quoteRmb) * 100 : 0;
+    const markup = totalCost > 0 ? (profit / totalCost) * 100 : 0;
     const hasQuotedCost = rows.some((row) => row.included && cleanNum(row.amount) > 0);
-    return { scheme, freight, totalCost, targetPrice, profit, margin, markup, hasQuotedCost };
+    return { scheme, freight, totalCost, targetPrice, quoteRmb, quoteUsd, profit, margin, markup, hasQuotedCost };
   });
-  return { inputs, goodsCost, quoteRmb, schemes };
+  return { inputs, goodsCost, schemes };
 }
 
 function getBestScheme(schemes) {
@@ -280,8 +287,29 @@ function renderCargo() {
   });
 }
 
+const baseFreightItems = [
+  "船运费用", "保险费", "报关费用", "港杂费用", "送货到港口费用",
+  "订舱费", "文件费", "THC码头操作费", "EDI费", "设备管理费",
+  "舱单录入费", "电放费", "熏蒸费", "拖车费", "仓储费", "查验费", "目的港费用"
+];
+
+function updateFreightDatalist() {
+  const term = $("tradeTerm").value;
+  const list = $("freightItemList");
+  if (!list) return;
+  
+  const filtered = baseFreightItems.filter(item => {
+    if (term === "FOB" && item === "船运费用") return false;
+    if (term === "CFR" && item === "保险费") return false;
+    return true;
+  });
+  
+  list.innerHTML = filtered.map(i => `<option value="${escapeXml(i)}"></option>`).join("");
+}
+
 function renderFreight() {
   syncSchemesFromRows();
+  updateFreightDatalist();
   const schemeOptions = state.schemes
     .map((scheme) => `<option value="${escapeXml(scheme)}">${escapeXml(scheme)}</option>`)
     .join("");
@@ -305,6 +333,22 @@ function renderFreight() {
       </td>
       <td class="row-action"><button class="btn danger small-btn" type="button" data-delete-freight="${index}">×</button></td>
     `;
+    
+    // 修复 datalist 必须清空才能重新选择的体验问题
+    const itemInput = tr.querySelector("[data-key='item']");
+    itemInput.addEventListener("mousedown", function() {
+      if (this.value) {
+        this._tempVal = this.value;
+        this.value = "";
+      }
+    });
+    itemInput.addEventListener("blur", function() {
+      if (!this.value && this._tempVal) {
+        this.value = this._tempVal;
+      }
+      delete this._tempVal;
+    });
+
     tr.querySelector("[data-key='scheme']").value = row.scheme;
     tbody.appendChild(tr);
   });
@@ -312,16 +356,27 @@ function renderFreight() {
 
 function renderSummary() {
   const result = calculate();
+  if (!result.schemes || result.schemes.length === 0) return;
+
   const selected = getBestScheme(result.schemes) || result.schemes[0];
+  if (!selected) return;
+
   $("termPill").textContent = result.inputs.tradeTerm;
   $("selectedSchemePill").textContent = `${selected.scheme} 最优`;
-  $("summaryTable").querySelector("thead th:nth-child(4)").textContent = `${result.inputs.targetProfit}%价`;
   $("goodsCost").textContent = money(result.goodsCost);
-  $("quoteRmb").textContent = money(result.quoteRmb);
+  
+  // 更新最终报价展示
+  const finalQuoteUsdVal = Math.round(selected.quoteUsd);
+  $("finalQuoteUsd").textContent = fmt.format(finalQuoteUsdVal);
+  $("finalQuoteRmb").textContent = money(selected.quoteRmb);
+  
   $("selectedCost").textContent = money(selected.totalCost);
   $("selectedProfit").textContent = money(selected.profit);
   $("profitMetric").className = `metric ${selected.profit >= 0 ? "green" : "red"}`;
-  $("statusLine").textContent = `自动取总成本最低方案；净利率 ${pct(selected.margin)}，成本加成率 ${pct(selected.markup)}`;
+  
+  const currentMargin = pct(selected.margin);
+  const currentMarkup = pct(selected.markup);
+  $("statusLine").textContent = `基于 ${result.inputs.targetProfit}% 利润率自动测算；净利率 ${currentMargin}，成本加成率 ${currentMarkup}`;
   $("termNote").textContent = getTermNote(result.inputs.tradeTerm);
 
   const tbody = $("summaryTable").querySelector("tbody");
@@ -332,7 +387,7 @@ function renderSummary() {
       <td>${row.scheme}${row.scheme === selected.scheme ? "（最优）" : ""}</td>
       <td class="money">${fmt.format(row.freight)}</td>
       <td class="money">${fmt.format(row.totalCost)}</td>
-      <td class="money">${fmt.format(row.targetPrice)}</td>
+      <td class="money">${fmt.format(Math.round(row.quoteUsd))}</td>
       <td class="money">${fmt.format(row.profit)}</td>
       <td class="money">${pct(row.margin)}</td>
     `;
@@ -349,61 +404,67 @@ function getTermNote(term) {
 function syncAndRender() {
   renderCargo();
   renderFreight();
+  renderSchemeOptions();
   renderSummary();
 }
 
 function updateStateOnInput(event) {
   const target = event.target;
   if (target.closest("#piPage")) return;
+  
   let changed = false;
+  
   if (target.matches("[data-cargo]")) {
     const row = state.cargo[Number(target.dataset.cargo)];
     const key = target.dataset.key;
     row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
-    renderSummary();
     changed = true;
-  }
-  if (target.matches("[data-freight]")) {
+  } else if (target.matches("[data-freight]")) {
     const row = state.freight[Number(target.dataset.freight)];
     const key = target.dataset.key;
     if (key === "included") row[key] = target.value === "true";
     else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
-    renderSummary();
+    changed = true;
+  } else if (target.id === "tradeTerm") {
+    updateFreightDatalist();
+    changed = true;
+  } else if (target.closest(".section-body") || target.closest(".topbar")) {
     changed = true;
   }
-  if (target.closest(".section-body") || target.closest(".topbar")) {
+
+  if (changed) {
     renderSummary();
-    changed = true;
+    scheduleAutoSave();
   }
-  if (changed) scheduleAutoSave();
 }
 
 function updateStateOnChange(event) {
   const target = event.target;
   if (target.closest("#piPage")) return;
+  
   let changed = false;
+  
   if (target.matches("[data-cargo]")) {
     const row = state.cargo[Number(target.dataset.cargo)];
     const key = target.dataset.key;
     row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
     renderCargo();
-    renderSummary();
     changed = true;
-  }
-  if (target.matches("[data-freight]")) {
+  } else if (target.matches("[data-freight]")) {
     const row = state.freight[Number(target.dataset.freight)];
     const key = target.dataset.key;
     if (key === "included") row[key] = target.value === "true";
     else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
     renderFreight();
-    renderSummary();
+    changed = true;
+  } else if (target.closest(".section-body") || target.closest(".topbar")) {
     changed = true;
   }
-  if (target.closest(".section-body") && !target.matches("[data-cargo]") && !target.matches("[data-freight]")) {
+
+  if (changed) {
     renderSummary();
-    changed = true;
+    scheduleAutoSave();
   }
-  if (changed) scheduleAutoSave();
 }
 
 function addCargo() {
@@ -470,8 +531,7 @@ function clearInputFields() {
   $("containerType").value = "";
   $("destination").value = "";
   $("validUntil").value = "";
-  $("exchangeRate").value = "";
-  $("quoteUsd").value = "";
+  $("exchangeRate").value = "7.2";
   $("targetProfit").value = "15";
   $("notes").value = "";
 }
@@ -524,7 +584,7 @@ function buildMarkdown(mode, lang = "zh") {
 }
 
 function buildInternalMarkdown(lang = "zh") {
-  const { inputs, goodsCost, quoteRmb, schemes } = calculate();
+  const { inputs, goodsCost, schemes } = calculate();
   const selected = getBestScheme(schemes) || schemes[0];
   const lines = [];
   lines.push(`# ${escapeMd(quoteTitle(inputs.projectName, lang, true))}`);
@@ -543,7 +603,7 @@ function buildInternalMarkdown(lang = "zh") {
   state.cargo.forEach((row) => {
     lines.push(`|${escapeMd(row.name)}|${escapeMd(row.spec)}|${row.length}|${row.height}|${row.width}|${fmt.format(row.weight)}|${row.qty}|${fmt.format(row.unitPrice)}|${row.taxRate}%|${fmt.format(cargoTax(row))}|${fmt.format(cargoTotal(row))}|${fmt.format(quoteUnitUsd())}|${fmt.format(quoteLineUsd(row))}|`);
   });
-  lines.push(`|**${tx(lang, "货物总成本", "Total Cargo Cost")}**||||||||||**${fmt.format(goodsCost)}**||**${fmt.format(inputs.quoteUsd)}**|`);
+  lines.push(`|**${tx(lang, "货物总成本", "Total Cargo Cost")}**||||||||||**${fmt.format(goodsCost)}**||**${fmt.format(selected.quoteUsd)}**|`);
   lines.push("");
   lines.push(`## ${tx(lang, "货代费用", "Freight Forwarder Cost")}`);
   lines.push("");
@@ -561,10 +621,10 @@ function buildInternalMarkdown(lang = "zh") {
   });
   lines.push(`## ${tx(lang, "利润测算", "Profit Calculation")}`);
   lines.push("");
-  lines.push(`|${tx(lang, "方案", "Option")}|${tx(lang, "物流费RMB", "Logistics RMB")}|${tx(lang, "总成本RMB", "Total Cost RMB")}|${tx(lang, "目标利润价RMB", "Target Price RMB")}|${tx(lang, "最终报价折合RMB", "Final Quote RMB")}|${tx(lang, "净利润RMB", "Net Profit RMB")}|${tx(lang, "净利率", "Net Margin")}|${tx(lang, "成本加成率", "Markup")}|`);
+  lines.push(`|${tx(lang, "方案", "Option")}|${tx(lang, "物流费RMB", "Logistics RMB")}|${tx(lang, "总成本RMB", "Total Cost RMB")}|${tx(lang, "报价USD", "Quote USD")}|${tx(lang, "最终报价RMB", "Final Quote RMB")}|${tx(lang, "净利润RMB", "Net Profit RMB")}|${tx(lang, "净利率", "Net Margin")}|${tx(lang, "成本加成率", "Markup")}|`);
   lines.push("|---|---:|---:|---:|---:|---:|---:|---:|");
   schemes.forEach((row) => {
-    lines.push(`|${freightName(row.scheme, lang)}|${fmt.format(row.freight)}|${fmt.format(row.totalCost)}|${fmt.format(row.targetPrice)}|${fmt.format(quoteRmb)}|${fmt.format(row.profit)}|${pct(row.margin)}|${pct(row.markup)}|`);
+    lines.push(`|${freightName(row.scheme, lang)}|${fmt.format(row.freight)}|${fmt.format(row.totalCost)}|${fmt.format(Math.round(row.quoteUsd))}|${fmt.format(row.quoteRmb)}|${fmt.format(row.profit)}|${pct(row.margin)}|${pct(row.markup)}|`);
   });
   lines.push("");
   lines.push(`${tx(lang, "自动推荐方案", "Recommended option")}：${freightName(selected.scheme, lang)}，${tx(lang, "预计净利润", "Estimated net profit")} ${fmt.format(selected.profit)} RMB。`);
@@ -578,7 +638,8 @@ function buildInternalMarkdown(lang = "zh") {
 }
 
 function buildCustomerMarkdown(lang = "zh") {
-  const { inputs } = calculate();
+  const { inputs, schemes } = calculate();
+  const selected = getBestScheme(schemes) || schemes[0];
   const lines = [];
   lines.push(`# ${escapeMd(quoteTitle(inputs.projectName, lang))}`);
   lines.push("");
@@ -588,7 +649,7 @@ function buildCustomerMarkdown(lang = "zh") {
   lines.push(`| ${tx(lang, "贸易术语", "Trade Term")} | ${inputs.tradeTerm} ${escapeMd(inputs.destination || tx(lang, "目的港", "Destination Port"))} |`);
   lines.push(`| ${tx(lang, "柜型", "Container Type")} | ${escapeMd(inputs.containerType)} |`);
   lines.push(`| ${tx(lang, "报价有效期", "Valid Until")} | ${escapeMd(inputs.validUntil)} |`);
-  lines.push(`| ${tx(lang, "报价金额", "Quotation Amount")} | **USD ${fmt.format(inputs.quoteUsd)}** |`);
+  lines.push(`| ${tx(lang, "报价金额", "Quotation Amount")} | **USD ${fmt.format(Math.round(selected.quoteUsd))}** |`);
   lines.push("");
   lines.push(`## ${tx(lang, "货物信息", "Cargo Information")}`);
   lines.push("");
@@ -653,7 +714,8 @@ function buildExcelXml(mode, lang = "zh") {
 }
 
 function buildInternalExcelXml(lang = "zh") {
-  const { inputs, goodsCost, quoteRmb, schemes } = calculate();
+  const { inputs, goodsCost, schemes } = calculate();
+  const selected = getBestScheme(schemes) || schemes[0];
   const cargoRows = [
     xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "规格", "Specification"), tx(lang, "长(m)", "Length(m)"), tx(lang, "高(m)", "Height(m)"), tx(lang, "宽(m)", "Width(m)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), tx(lang, "单价RMB", "Unit Price RMB"), tx(lang, "税率%", "Tax Rate %"), tx(lang, "税费RMB", "Tax RMB"), tx(lang, "合计RMB", "Total RMB"), tx(lang, "平均报价单价USD", "Avg Quote Unit USD"), tx(lang, "报价金额USD", "Quote Amount USD")]),
     ...state.cargo.map((row) => xmlRow([
@@ -661,7 +723,7 @@ function buildInternalExcelXml(lang = "zh") {
       [row.length, "Number"], [row.height, "Number"], [row.width, "Number"], [row.weight, "Number"], [row.qty, "Number"],
       [row.unitPrice, "Number"], [row.taxRate, "Number"], [cargoTax(row), "Number"], [cargoTotal(row), "Number"], [quoteUnitUsd(), "Number"], [quoteLineUsd(row), "Number"]
     ])),
-    xmlRow([tx(lang, "货物总成本", "Total Cargo Cost"), "", "", "", "", "", "", "", "", "", [goodsCost, "Number"], "", [inputs.quoteUsd, "Number"]])
+    xmlRow([tx(lang, "货物总成本", "Total Cargo Cost"), "", "", "", "", "", "", "", "", "", [goodsCost, "Number"], "", [selected.quoteUsd, "Number"]])
   ].join("");
 
   const freightRows = [
@@ -677,12 +739,12 @@ function buildInternalExcelXml(lang = "zh") {
     xmlRow([tx(lang, "目的港/目的地", "Destination"), inputs.destination]),
     xmlRow([tx(lang, "报价有效期", "Valid Until"), inputs.validUntil]),
     xmlRow([tx(lang, "USD兑RMB汇率", "USD/RMB Rate"), [inputs.exchangeRate, "Number"]]),
-    xmlRow([tx(lang, "最终客户报价USD", "Final Customer Quote USD"), [inputs.quoteUsd, "Number"]]),
-    xmlRow([tx(lang, "最终客户报价折合RMB", "Final Quote RMB"), [quoteRmb, "Number"]]),
+    xmlRow([tx(lang, "最终客户报价USD", "Final Customer Quote USD"), [selected.quoteUsd, "Number"]]),
+    xmlRow([tx(lang, "最终客户报价折合RMB", "Final Quote RMB"), [selected.quoteRmb, "Number"]]),
     xmlRow([""]),
-    xmlRow([tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "总成本RMB", "Total Cost RMB"), tx(lang, "目标利润价RMB", "Target Price RMB"), tx(lang, "净利润RMB", "Net Profit RMB"), tx(lang, "净利率%", "Net Margin %"), tx(lang, "成本加成率%", "Markup %")]),
+    xmlRow([tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "总成本RMB", "Total Cost RMB"), tx(lang, "报价USD", "Quote USD"), tx(lang, "最终报价RMB", "Final Quote RMB"), tx(lang, "净利润RMB", "Net Profit RMB"), tx(lang, "净利率%", "Net Margin %"), tx(lang, "成本加成率%", "Markup %")]),
     ...schemes.map((row) => xmlRow([
-      freightName(row.scheme, lang), [row.freight, "Number"], [row.totalCost, "Number"], [row.targetPrice, "Number"],
+      freightName(row.scheme, lang), [row.freight, "Number"], [row.totalCost, "Number"], [row.quoteUsd, "Number"], [row.quoteRmb, "Number"],
       [row.profit, "Number"], [row.margin, "Number"], [row.markup, "Number"]
     ])),
     xmlRow([""]),
@@ -702,7 +764,8 @@ function buildInternalExcelXml(lang = "zh") {
 }
 
 function buildCustomerExcelXml(lang = "zh") {
-  const { inputs } = calculate();
+  const { inputs, schemes } = calculate();
+  const selected = getBestScheme(schemes) || schemes[0];
   const infoRows = [
     xmlRow([quoteTitle(inputs.projectName, lang)]),
     xmlRow([tx(lang, "项目", "Item"), tx(lang, "内容", "Details")]),
@@ -710,7 +773,7 @@ function buildCustomerExcelXml(lang = "zh") {
     xmlRow([tx(lang, "贸易术语", "Trade Term"), `${inputs.tradeTerm} ${inputs.destination || tx(lang, "目的港", "Destination Port")}`]),
     xmlRow([tx(lang, "柜型", "Container Type"), inputs.containerType]),
     xmlRow([tx(lang, "报价有效期", "Valid Until"), inputs.validUntil]),
-    xmlRow([tx(lang, "报价金额", "Quotation Amount"), `USD ${fmt.format(inputs.quoteUsd)}`]),
+    xmlRow([tx(lang, "报价金额", "Quotation Amount"), `USD ${fmt.format(Math.round(selected.quoteUsd))}`]),
     xmlRow([""]),
     xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "规格", "Specification"), tx(lang, "长(m)", "Length(m)"), tx(lang, "高(m)", "Height(m)"), tx(lang, "宽(m)", "Width(m)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), tx(lang, "平均报价单价USD", "Avg Unit Price USD"), tx(lang, "报价金额USD", "Amount USD")]),
     ...state.cargo.map((row) => xmlRow([
@@ -752,7 +815,6 @@ async function downloadExcel(mode, lang, suffix, langSuffix) {
   try {
     const snapshot = getSnapshot("Excel导出");
     snapshot.inputs.exchangeRate = cleanNum(snapshot.inputs.exchangeRate);
-    snapshot.inputs.quoteUsd = cleanNum(snapshot.inputs.quoteUsd);
     snapshot.inputs.targetProfit = cleanNum(snapshot.inputs.targetProfit);
 
     const resp = await fetch(`/api/export?mode=${mode}&lang=${lang}`, {
@@ -828,7 +890,6 @@ async function fetchUsdCnyRate() {
 async function archiveSnapshot() {
   const snapshot = getSnapshot("服务器归档");
   snapshot.inputs.exchangeRate = cleanNum(snapshot.inputs.exchangeRate);
-  snapshot.inputs.quoteUsd = cleanNum(snapshot.inputs.quoteUsd);
   snapshot.inputs.targetProfit = cleanNum(snapshot.inputs.targetProfit);
 
   try {

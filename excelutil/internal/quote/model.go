@@ -8,7 +8,6 @@ type Inputs struct {
 	Destination    string  `json:"destination"`
 	ValidUntil     string  `json:"validUntil"`
 	ExchangeRate   float64 `json:"exchangeRate"`
-	QuoteUsd       float64 `json:"quoteUsd"`
 	TargetProfit   float64 `json:"targetProfit"`
 	SelectedScheme string  `json:"selectedScheme"`
 	Notes          string  `json:"notes"`
@@ -48,6 +47,8 @@ type SummaryRow struct {
 	Freight     float64
 	TotalCost   float64
 	TargetPrice float64
+	QuoteUsd    float64
+	QuoteRmb    float64
 	Profit      float64
 	Margin      float64
 }

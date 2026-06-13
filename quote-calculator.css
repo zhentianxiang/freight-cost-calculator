@@ -421,6 +421,36 @@ td select:focus {
   margin-bottom: 7px;
 }
 
+.metric.highlight {
+  background: var(--primary-2);
+  border-color: #bad3df;
+}
+
+.value-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.value-sub {
+  display: flex;
+  flex-direction: column;
+}
+
+.value-sub .currency {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.value-sub span:not(.currency) {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
 .metric .value {
   font-size: 22px;
   font-weight: 800;
