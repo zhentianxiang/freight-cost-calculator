@@ -237,10 +237,14 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		{tx(lang, "贸易术语", "Trade Term"), inputs.TradeTerm + " " + inputs.Destination},
 		{tx(lang, "柜型", "Container"), inputs.ContainerType},
 		{tx(lang, "目的港", "Destination"), inputs.Destination},
+		{tx(lang, "目的国", "Destination Country"), inputs.DestinationCountry},
+		{tx(lang, "HS编码", "HS Code"), inputs.HSCode},
 		{tx(lang, "报价有效期", "Valid Until"), inputs.ValidUntil},
 		{tx(lang, "美元汇率", "USD/RMB Rate"), fmt.Sprintf("%.1f", inputs.ExchangeRate)},
 		{tx(lang, "欧元汇率", "EUR/RMB Rate"), fmt.Sprintf("%.1f", inputs.EurExchangeRate)},
 		{tx(lang, "最终报价币种", "Final Currency"), currencyName(inputs.OutputCurrency, lang)},
+		{tx(lang, "进口关税率", "Import Duty Rate"), fmtPct(inputs.DutyRate)},
+		{tx(lang, "进口VAT/GST", "Import VAT/GST"), fmtPct(inputs.ImportVatRate)},
 		{tx(lang, "目标利润率", "Target Profit"), fmtPct(inputs.TargetProfit)},
 	}
 	for _, ir := range infoRows {
@@ -267,6 +271,7 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		style int
 	}{
 		{tx(lang, "货物总成本", "Total Cargo Cost"), goodsCost, s.MoneyStyle},
+		{tx(lang, "目的国计入费用", "Included Destination Costs"), best.ImportCosts.IncludedTotal, s.MoneyStyle},
 		{fmt.Sprintf("%s(%s)", tx(lang, "最终客户报价", "Final Quote"), inputs.OutputCurrency), quoteValue(best, inputs.OutputCurrency), s.MoneyStyle},
 		{tx(lang, "最终客户报价(USD)", "Final Quote USD"), best.QuoteUsd, s.MoneyStyle},
 		{tx(lang, "最终客户报价(EUR)", "Final Quote EUR"), best.QuoteEur, s.MoneyStyle},

@@ -14,7 +14,8 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 				freight += f.Amount
 			}
 		}
-		totalCost := goodsCost + freight
+		importCosts := estimateImportCosts(snap.Inputs, goodsCost, freight)
+		totalCost := goodsCost + freight + importCosts.IncludedTotal
 
 		// 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
 		quoteRmb := totalCost / (1 - snap.Inputs.TargetProfit/100)
@@ -37,6 +38,7 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 		summaries = append(summaries, SummaryRow{
 			Scheme:      s,
 			Freight:     freight,
+			ImportCosts: importCosts,
 			TotalCost:   totalCost,
 			TargetPrice: targetPrice,
 			QuoteUsd:    quoteUsd,
@@ -47,6 +49,33 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 		})
 	}
 	return goodsCost, summaries
+}
+
+func estimateImportCosts(inputs Inputs, goodsCost, freight float64) ImportCosts {
+	customsValue := goodsCost + freight
+	duty := customsValue * inputs.DutyRate / 100
+	importTax := (customsValue + duty) * inputs.ImportVatRate / 100
+	destinationLocal := inputs.DestinationDelivery + inputs.DestinationOther
+	clearance := inputs.DestinationClearance
+	includeDelivery := inputs.TradeTerm == "DAP" || inputs.TradeTerm == "DDP"
+	includeImport := inputs.TradeTerm == "DDP"
+	includedTotal := 0.0
+	if includeDelivery {
+		includedTotal += destinationLocal
+	}
+	if includeImport {
+		includedTotal += clearance + duty + importTax
+	}
+	return ImportCosts{
+		CustomsValue:     customsValue,
+		Duty:             duty,
+		ImportTax:        importTax,
+		DestinationLocal: destinationLocal,
+		Clearance:        clearance,
+		IncludedTotal:    includedTotal,
+		IncludeDelivery:  includeDelivery,
+		IncludeImport:    includeImport,
+	}
 }
 
 func bestScheme(summaries []SummaryRow) SummaryRow {

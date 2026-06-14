@@ -233,6 +233,20 @@ h1 {
   opacity: 0.72;
 }
 
+.import-scope {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid #c9d9e4;
+  border-radius: 6px;
+  background: #f7fbfd;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
 label {
   color: var(--muted);
   font-size: 12px;

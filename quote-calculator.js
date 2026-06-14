@@ -150,10 +150,17 @@ function getInputs() {
     tradeTerm: $("tradeTerm").value,
     containerType: $("containerType").value.trim(),
     destination: $("destination").value.trim(),
+    destinationCountry: $("destinationCountry").value.trim(),
+    hsCode: $("hsCode").value.trim(),
     validUntil: $("validUntil").value.trim(),
     exchangeRate: cleanNum($("exchangeRate").value),
     eurExchangeRate: cleanNum($("eurExchangeRate").value),
     outputCurrency: $("outputCurrency").value || "USD",
+    dutyRate: cleanNum($("dutyRate").value),
+    importVatRate: cleanNum($("importVatRate").value),
+    destinationDelivery: cleanNum($("destinationDelivery").value),
+    destinationClearance: cleanNum($("destinationClearance").value),
+    destinationOther: cleanNum($("destinationOther").value),
     targetProfit: cleanNum($("targetProfit").value),
     selectedScheme: $("selectedScheme").value,
     notes: $("notes").value.trim()
@@ -167,10 +174,17 @@ function getRawInputs() {
     tradeTerm: $("tradeTerm").value,
     containerType: $("containerType").value.trim(),
     destination: $("destination").value.trim(),
+    destinationCountry: $("destinationCountry").value.trim(),
+    hsCode: $("hsCode").value.trim(),
     validUntil: $("validUntil").value.trim(),
     exchangeRate: $("exchangeRate").value,
     eurExchangeRate: $("eurExchangeRate").value,
     outputCurrency: $("outputCurrency").value,
+    dutyRate: $("dutyRate").value,
+    importVatRate: $("importVatRate").value,
+    destinationDelivery: $("destinationDelivery").value,
+    destinationClearance: $("destinationClearance").value,
+    destinationOther: $("destinationOther").value,
     targetProfit: $("targetProfit").value,
     selectedScheme: $("selectedScheme").value,
     notes: $("notes").value
@@ -295,7 +309,8 @@ function calculate() {
     const freight = state.freight
       .filter((row) => row.scheme === scheme && row.included)
       .reduce((sum, row) => sum + cleanNum(row.amount), 0);
-    const totalCost = goodsCost + freight;
+    const importCosts = estimateImportCosts(inputs, goodsCost, freight);
+    const totalCost = goodsCost + freight + importCosts.includedTotal;
     
     // 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
     const profitRate = cleanNum(inputs.targetProfit);
@@ -311,9 +326,22 @@ function calculate() {
     const margin = quoteRmb > 0 ? (profit / quoteRmb) * 100 : 0;
     const markup = totalCost > 0 ? (profit / totalCost) * 100 : 0;
     const hasQuotedCost = rows.some((row) => row.included && cleanNum(row.amount) > 0);
-    return { scheme, freight, totalCost, targetPrice, quoteRmb, quoteUsd, quoteEur, profit, margin, markup, hasQuotedCost };
+    return { scheme, freight, totalCost, targetPrice, quoteRmb, quoteUsd, quoteEur, profit, margin, markup, hasQuotedCost, importCosts };
   });
   return { inputs, goodsCost, schemes };
+}
+
+function estimateImportCosts(inputs, goodsCost, freight) {
+  const customsValue = goodsCost + freight;
+  const duty = customsValue * cleanNum(inputs.dutyRate) / 100;
+  const importTax = (customsValue + duty) * cleanNum(inputs.importVatRate) / 100;
+  const destinationLocal = cleanNum(inputs.destinationDelivery) + cleanNum(inputs.destinationOther);
+  const clearance = cleanNum(inputs.destinationClearance);
+  const term = inputs.tradeTerm;
+  const includeDelivery = term === "DAP" || term === "DDP";
+  const includeImport = term === "DDP";
+  const includedTotal = (includeDelivery ? destinationLocal : 0) + (includeImport ? clearance + duty + importTax : 0);
+  return { customsValue, duty, importTax, destinationLocal, clearance, includedTotal, includeDelivery, includeImport };
 }
 
 function getBestScheme(schemes) {
@@ -365,7 +393,8 @@ function renderCargo() {
 const baseFreightItems = [
   "船运费用", "保险费", "报关费用", "港杂费用", "送货到港口费用",
   "订舱费", "文件费", "THC码头操作费", "EDI费", "设备管理费",
-  "舱单录入费", "电放费", "熏蒸费", "拖车费", "仓储费", "查验费", "目的港费用"
+  "舱单录入费", "电放费", "熏蒸费", "拖车费", "仓储费", "查验费", "目的港费用",
+  "目的国派送费", "进口清关服务费", "进口关税", "进口VAT/GST"
 ];
 
 function updateFreightDatalist() {
@@ -437,9 +466,11 @@ function renderSummary() {
   if (!selected) return;
 
   $("termPill").textContent = result.inputs.tradeTerm;
+  renderDestinationCostVisibility(result.inputs.tradeTerm);
   $("selectedSchemePill").textContent = `${selected.scheme} 最优`;
   $("goodsCost").textContent = money(result.goodsCost);
   $("goodsCostMeta").textContent = goodsCostMetaText();
+  renderImportCostSummary(result.inputs, selected.importCosts);
   
   // 更新最终报价展示
   $("finalQuoteUsd").textContent = formatQuoteMoney(selected.quoteUsd, "USD");
@@ -474,10 +505,32 @@ function renderSummary() {
   });
 }
 
+function renderDestinationCostVisibility(term = $("tradeTerm").value) {
+  const section = $("destinationCostSection");
+  if (!section) return;
+  section.classList.toggle("hidden", !(term === "DAP" || term === "DDP"));
+}
+
 function getTermNote(term) {
   if (term === "FOB") return "FOB通常不包含国际海运费；如货代费用里计入了海运费，需改为不计入或改用CFR/CIF口径。";
   if (term === "CIF") return "CIF通常包含国际海运费和保险费；请确认保险费已在费用表中计入。";
+  if (term === "DAP") return "DAP通常包含运输至买方指定地点的派送费，但不包含进口清关、进口关税和进口税费。";
+  if (term === "DDP") return "DDP通常包含运输至指定地点、进口清关、进口关税及进口税费；税率需以目的国官方政策或货代确认为准。";
   return "CFR通常包含国际海运费，不包含目的港清关、关税、目的港杂费和目的地派送。";
+}
+
+function renderImportCostSummary(inputs, costs = estimateImportCosts(inputs, 0, 0)) {
+  const scope = $("importScope");
+  const note = $("importCostNote");
+  if (!scope || !note) return;
+  if (inputs.tradeTerm === "DDP") {
+    scope.textContent = `已计入DDP：派送/其他 ${money(costs.destinationLocal)}，清关 ${money(costs.clearance)}，关税 ${money(costs.duty)}，VAT/GST ${money(costs.importTax)}`;
+  } else if (inputs.tradeTerm === "DAP") {
+    scope.textContent = `已计入DAP：目的国派送/其他 ${money(costs.destinationLocal)}；关税/VAT仅作参考`;
+  } else {
+    scope.textContent = `${inputs.tradeTerm}不自动计入目的国费用`;
+  }
+  note.textContent = `估算完税基础 ${money(costs.customsValue)}；进口关税 ${money(costs.duty)}；进口VAT/GST ${money(costs.importTax)}。政策与税率请按目的国、HS编码和原产地确认。`;
 }
 
 function syncAndRender() {
@@ -612,10 +665,17 @@ function clearInputFields() {
   $("tradeTerm").value = "CFR";
   $("containerType").value = "";
   $("destination").value = "";
+  $("destinationCountry").value = "";
+  $("hsCode").value = "";
   $("validUntil").value = "";
   $("exchangeRate").value = "7.2";
   $("eurExchangeRate").value = "7.8";
   $("outputCurrency").value = "USD";
+  $("dutyRate").value = "0";
+  $("importVatRate").value = "0";
+  $("destinationDelivery").value = "0";
+  $("destinationClearance").value = "0";
+  $("destinationOther").value = "0";
   $("targetProfit").value = "15";
   $("notes").value = "";
 }
@@ -687,6 +747,10 @@ function buildInternalMarkdown(lang = "zh") {
   lines.push(`- ${tx(lang, "USD兑RMB汇率", "USD/RMB Rate")}：${inputs.exchangeRate}`);
   lines.push(`- ${tx(lang, "EUR兑RMB汇率", "EUR/RMB Rate")}：${inputs.eurExchangeRate}`);
   lines.push(`- ${tx(lang, "最终报价币种", "Final Currency")}：${inputs.outputCurrency}`);
+  if (inputs.destinationCountry) lines.push(`- ${tx(lang, "目的国", "Destination Country")}：${escapeMd(inputs.destinationCountry)}`);
+  if (inputs.hsCode) lines.push(`- ${tx(lang, "HS编码", "HS Code")}：${escapeMd(inputs.hsCode)}`);
+  lines.push(`- ${tx(lang, "进口关税率", "Import Duty Rate")}：${inputs.dutyRate}%`);
+  lines.push(`- ${tx(lang, "进口VAT/GST", "Import VAT/GST")}：${inputs.importVatRate}%`);
   lines.push("");
   lines.push(`## ${tx(lang, "货物成本", "Cargo Cost")}`);
   lines.push("");
@@ -775,6 +839,20 @@ function getCustomerTermText(term, destination, lang = "zh") {
       `The quotation includes cargo, origin-side charges, international ocean freight, and basic marine insurance to ${place}.`
     );
   }
+  if (term === "DAP") {
+    return tx(
+      lang,
+      `报价包含货物、出口端费用、国际运输及目的国本地派送至${place}，不包含进口清关、关税及进口税费。`,
+      `The quotation includes cargo, origin-side charges, international transport, and destination local delivery to ${place}. Import clearance, duties, and import taxes are excluded.`
+    );
+  }
+  if (term === "DDP") {
+    return tx(
+      lang,
+      `报价包含货物、出口端费用、国际运输、目的国本地派送、进口清关、预估关税及进口税费至${place}。`,
+      `The quotation includes cargo, origin-side charges, international transport, destination local delivery, import clearance, estimated duties, and import taxes to ${place}.`
+    );
+  }
   return tx(
     lang,
     `报价包含货物、出口端费用及国际海运费至${place}。`,
@@ -829,9 +907,16 @@ function buildInternalExcelXml(lang = "zh") {
     xmlRow([tx(lang, "贸易术语", "Trade Term"), inputs.tradeTerm]),
     xmlRow([tx(lang, "柜型", "Container Type"), inputs.containerType]),
     xmlRow([tx(lang, "目的港/目的地", "Destination"), inputs.destination]),
+    xmlRow([tx(lang, "目的国", "Destination Country"), inputs.destinationCountry]),
+    xmlRow([tx(lang, "HS编码", "HS Code"), inputs.hsCode]),
     xmlRow([tx(lang, "报价有效期", "Valid Until"), inputs.validUntil]),
     xmlRow([tx(lang, "USD兑RMB汇率", "USD/RMB Rate"), [inputs.exchangeRate, "Number"]]),
     xmlRow([tx(lang, "EUR兑RMB汇率", "EUR/RMB Rate"), [inputs.eurExchangeRate, "Number"]]),
+    xmlRow([tx(lang, "进口关税率%", "Import Duty Rate %"), [inputs.dutyRate, "Number"]]),
+    xmlRow([tx(lang, "进口VAT/GST%", "Import VAT/GST %"), [inputs.importVatRate, "Number"]]),
+    xmlRow([tx(lang, "目的国派送费RMB", "Destination Delivery RMB"), [inputs.destinationDelivery, "Number"]]),
+    xmlRow([tx(lang, "进口清关服务费RMB", "Import Clearance RMB"), [inputs.destinationClearance, "Number"]]),
+    xmlRow([tx(lang, "目的国其他费用RMB", "Other Destination RMB"), [inputs.destinationOther, "Number"]]),
     xmlRow([tx(lang, "最终报价币种", "Final Currency"), currencyLabel(inputs.outputCurrency, lang)]),
     xmlRow([`${tx(lang, "最终客户报价", "Final Customer Quote")} ${inputs.outputCurrency}`, [quoteValueByCurrency(selected, inputs.outputCurrency), "Number"]]),
     xmlRow([tx(lang, "最终客户报价折合RMB", "Final Quote RMB"), [selected.quoteRmb, "Number"]]),
@@ -982,6 +1067,15 @@ async function fetchUsdCnyRate() {
     button.disabled = false;
     button.innerHTML = "<span>同步获取</span><small>USD/EUR</small>";
   }
+}
+
+function openPolicyLookup() {
+  const inputs = getInputs();
+  const country = inputs.destinationCountry || inputs.destination || "destination country";
+  const hs = inputs.hsCode || "HS code";
+  const query = encodeURIComponent(`${country} official customs tariff import duty VAT ${hs}`);
+  window.open(`https://www.google.com/search?q=${query}`, "_blank", "noopener");
+  $("importCostNote").textContent = `已打开政策查询：请按目的国 ${country}、HS编码 ${hs}、原产地和材质确认关税/VAT后填写税率。`;
 }
 
 function readImageFile(file) {
@@ -1554,6 +1648,7 @@ $("addCargoBtn").addEventListener("click", addCargo);
 $("addFreightSchemeBtn").addEventListener("click", addFreightScheme);
 $("addFreightBtn").addEventListener("click", () => addFreight());
 $("fetchRateBtn").addEventListener("click", fetchUsdCnyRate);
+$("policyLookupBtn").addEventListener("click", openPolicyLookup);
 $("clearBtn").addEventListener("click", clearAllData);
 $("mdBtn").addEventListener("click", () => openExportDialog("md"));
  $("excelBtn").addEventListener("click", () => openExportDialog("excel"));

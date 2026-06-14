@@ -51,6 +51,8 @@
                   <option value="CFR" selected>CFR</option>
                   <option value="FOB">FOB</option>
                   <option value="CIF">CIF</option>
+                  <option value="DAP">DAP</option>
+                  <option value="DDP">DDP</option>
                 </select>
               </div>
               <div class="field">
@@ -96,6 +98,56 @@
                 </div>
               </div>
               </div>
+          </div>
+        </section>
+
+        <section class="section hidden" id="destinationCostSection">
+          <div class="section-header">
+            <h2 class="section-title">目的国费用</h2>
+            <button class="btn" id="policyLookupBtn" type="button">查询政策</button>
+          </div>
+          <div class="section-body">
+            <div class="form-grid">
+              <div class="field">
+                <label for="destinationCountry">目的国</label>
+                <input id="destinationCountry" value="France" placeholder="例如：France">
+              </div>
+              <div class="field">
+                <label for="hsCode">HS编码</label>
+                <input id="hsCode" placeholder="例如：6802.91">
+              </div>
+              <div class="field">
+                <label for="dutyRate">进口关税率</label>
+                <div class="rate-input">
+                  <input id="dutyRate" class="num" type="number" step="0.1" value="0">
+                  <span class="unit">%</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="importVatRate">进口VAT/GST</label>
+                <div class="rate-input">
+                  <input id="importVatRate" class="num" type="number" step="0.1" value="0">
+                  <span class="unit">%</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="destinationDelivery">目的国派送费RMB</label>
+                <input id="destinationDelivery" class="num" type="number" step="1" value="0">
+              </div>
+              <div class="field">
+                <label for="destinationClearance">进口清关服务费RMB</label>
+                <input id="destinationClearance" class="num" type="number" step="1" value="0">
+              </div>
+              <div class="field">
+                <label for="destinationOther">目的国其他费用RMB</label>
+                <input id="destinationOther" class="num" type="number" step="1" value="0">
+              </div>
+              <div class="field">
+                <label>计入口径</label>
+                <div class="import-scope" id="importScope">CFR/CIF/FOB不自动计入目的国费用</div>
+              </div>
+            </div>
+            <p class="note" id="importCostNote">DAP通常计入目的国派送费；DDP通常还需计入进口关税、VAT/GST和进口清关费用。税率需以目的国官方海关口径或货代确认为准。</p>
           </div>
         </section>
 
@@ -324,6 +376,7 @@
                     <option value="CFR" selected>CFR</option>
                     <option value="FOB">FOB</option>
                     <option value="CIF">CIF</option>
+                    <option value="DAP">DAP</option>
                     <option value="DDP">DDP</option>
                     <option value="EXW">EXW</option>
                   </select>

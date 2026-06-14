@@ -1,18 +1,25 @@
 package quote
 
 type Inputs struct {
-	CompanyName     string  `json:"companyName"`
-	ProjectName     string  `json:"projectName"`
-	TradeTerm       string  `json:"tradeTerm"`
-	ContainerType   string  `json:"containerType"`
-	Destination     string  `json:"destination"`
-	ValidUntil      string  `json:"validUntil"`
-	ExchangeRate    float64 `json:"exchangeRate"`
-	EurExchangeRate float64 `json:"eurExchangeRate"`
-	OutputCurrency  string  `json:"outputCurrency"`
-	TargetProfit    float64 `json:"targetProfit"`
-	SelectedScheme  string  `json:"selectedScheme"`
-	Notes           string  `json:"notes"`
+	CompanyName          string  `json:"companyName"`
+	ProjectName          string  `json:"projectName"`
+	TradeTerm            string  `json:"tradeTerm"`
+	ContainerType        string  `json:"containerType"`
+	Destination          string  `json:"destination"`
+	DestinationCountry   string  `json:"destinationCountry"`
+	HSCode               string  `json:"hsCode"`
+	ValidUntil           string  `json:"validUntil"`
+	ExchangeRate         float64 `json:"exchangeRate"`
+	EurExchangeRate      float64 `json:"eurExchangeRate"`
+	OutputCurrency       string  `json:"outputCurrency"`
+	DutyRate             float64 `json:"dutyRate"`
+	ImportVatRate        float64 `json:"importVatRate"`
+	DestinationDelivery  float64 `json:"destinationDelivery"`
+	DestinationClearance float64 `json:"destinationClearance"`
+	DestinationOther     float64 `json:"destinationOther"`
+	TargetProfit         float64 `json:"targetProfit"`
+	SelectedScheme       string  `json:"selectedScheme"`
+	Notes                string  `json:"notes"`
 }
 
 type CargoRow struct {
@@ -49,6 +56,7 @@ type Snapshot struct {
 type SummaryRow struct {
 	Scheme      string
 	Freight     float64
+	ImportCosts ImportCosts
 	TotalCost   float64
 	TargetPrice float64
 	QuoteUsd    float64
@@ -56,6 +64,17 @@ type SummaryRow struct {
 	QuoteRmb    float64
 	Profit      float64
 	Margin      float64
+}
+
+type ImportCosts struct {
+	CustomsValue     float64
+	Duty             float64
+	ImportTax        float64
+	DestinationLocal float64
+	Clearance        float64
+	IncludedTotal    float64
+	IncludeDelivery  bool
+	IncludeImport    bool
 }
 
 type Styles struct {

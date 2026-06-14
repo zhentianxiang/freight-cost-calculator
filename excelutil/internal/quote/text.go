@@ -21,6 +21,14 @@ func getCustomerTermText(term, destination, lang string) string {
 		return tx(lang,
 			fmt.Sprintf("报价包含货物、出口端费用、国际海运费及基础海运保险至%s。", place),
 			fmt.Sprintf("The quotation includes cargo, origin-side charges, international ocean freight, and basic marine insurance to %s.", place))
+	case "DAP":
+		return tx(lang,
+			fmt.Sprintf("报价包含货物、出口端费用、国际运输及目的国本地派送至%s，不包含进口清关、关税及进口税费。", place),
+			fmt.Sprintf("The quotation includes cargo, origin-side charges, international transport, and destination local delivery to %s. Import clearance, duties, and import taxes are excluded.", place))
+	case "DDP":
+		return tx(lang,
+			fmt.Sprintf("报价包含货物、出口端费用、国际运输、目的国本地派送、进口清关、预估关税及进口税费至%s。", place),
+			fmt.Sprintf("The quotation includes cargo, origin-side charges, international transport, destination local delivery, import clearance, estimated duties, and import taxes to %s.", place))
 	default:
 		return tx(lang,
 			fmt.Sprintf("报价包含货物、出口端费用及国际海运费至%s。", place),
