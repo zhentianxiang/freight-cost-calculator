@@ -829,7 +829,7 @@ td select:focus {
 }
 
 .modal.large-modal {
-  width: min(840px, 100%);
+  width: min(960px, 100%);
 }
 
 .history-table-wrap {
@@ -847,8 +847,59 @@ td select:focus {
   padding: 10px 12px;
 }
 
+.history-table-wrap th:last-child,
+.history-table-wrap td:last-child {
+  width: 168px;
+}
+
 .history-table-wrap tr:hover td {
   background-color: var(--primary-2);
+}
+
+.history-action-cell {
+  min-width: 160px;
+}
+
+.history-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-action-btn {
+  min-width: 68px;
+  min-height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.history-action-btn.load {
+  color: var(--primary);
+  border-color: #a8cad6;
+  background: #f4fbfd;
+}
+
+.history-action-btn.load:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.history-action-btn.delete {
+  color: var(--red);
+  border-color: #efc2bf;
+  background: #fff8f7;
+}
+
+.history-action-btn.delete:hover {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
 }
 
 

@@ -1084,11 +1084,12 @@ async function fetchHistory() {
       tr.innerHTML = `
         <td>${formatSaveTime(item.updatedAt)}</td>
         <td>${escapeXml(item.projectName)}</td>
+        <td>${escapeXml(item.destination || "-")}</td>
         <td>${escapeXml(item.label)}</td>
-        <td>
-          <div class="actions">
-            <button class="btn primary small-btn" title="加载此报价" data-load-id="${item.id}">加载</button>
-            <button class="btn danger small-btn" title="删除归档" data-delete-id="${item.id}">删除</button>
+        <td class="history-action-cell">
+          <div class="history-actions">
+            <button class="history-action-btn load" type="button" title="加载此报价" data-load-id="${item.id}">加载</button>
+            <button class="history-action-btn delete" type="button" title="删除归档" data-delete-id="${item.id}">删除</button>
           </div>
         </td>
       `;

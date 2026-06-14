@@ -16,6 +16,7 @@ type FileStore struct {
 type Summary struct {
 	ID          string `json:"id"`
 	ProjectName string `json:"projectName"`
+	Destination string `json:"destination"`
 	Label       string `json:"label"`
 	UpdatedAt   string `json:"updatedAt"`
 }
@@ -60,6 +61,7 @@ func (s *FileStore) List() ([]Summary, error) {
 			list = append(list, Summary{
 				ID:          snap.ID,
 				ProjectName: snap.Inputs.ProjectName,
+				Destination: snap.Inputs.Destination,
 				Label:       snap.Label,
 				UpdatedAt:   snap.UpdatedAt,
 			})
