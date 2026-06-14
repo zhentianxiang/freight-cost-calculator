@@ -67,10 +67,26 @@
               </div>
               <div class="field">
                 <label for="exchangeRate">USD兑RMB汇率</label>
-                <div class="rate-input">
-                  <input id="exchangeRate" class="num" type="number" step="0.0001" value="6.7750677507">
-                  <button class="btn" id="fetchRateBtn" type="button">获取</button>
-                </div>
+                <input id="exchangeRate" class="num" type="number" step="0.1" value="6.8">
+              </div>
+              <div class="field">
+                <label for="eurExchangeRate">EUR兑RMB汇率</label>
+                <input id="eurExchangeRate" class="num" type="number" step="0.1" value="7.8">
+              </div>
+              <div class="field rate-sync-field">
+                <label>自动汇率</label>
+                <button class="btn rate-sync-btn" id="fetchRateBtn" type="button">
+                  <span>同步获取</span>
+                  <small>USD/EUR</small>
+                </button>
+              </div>
+              <div class="field">
+                <label for="outputCurrency">最终报价币种</label>
+                <select id="outputCurrency">
+                  <option value="USD" selected>美元 USD</option>
+                  <option value="RMB">人民币 RMB</option>
+                  <option value="EUR">欧元 EUR</option>
+                </select>
               </div>
               <div class="field">
                 <label for="targetProfit">目标利润率</label>
@@ -93,6 +109,7 @@
               <table id="cargoTable">
                 <colgroup>
                   <col class="cargo-name">
+                  <col class="cargo-image">
                   <col class="cargo-spec">
                   <col class="cargo-dim">
                   <col class="cargo-dim">
@@ -108,10 +125,11 @@
                 <thead>
                   <tr>
                     <th>货物名称</th>
+                    <th>图片</th>
                     <th>规格</th>
-                    <th>长(m)</th>
-                    <th>高(m)</th>
-                    <th>宽(m)</th>
+                    <th>长(cm)</th>
+                    <th>高(cm)</th>
+                    <th>宽(cm)</th>
                     <th>单箱KG</th>
                     <th>数量</th>
                     <th>单价RMB</th>
@@ -195,17 +213,28 @@
               <div class="metric">
                 <div class="label">货物总成本</div>
                 <div class="value" id="goodsCost">¥0</div>
+                <div class="metric-foot" id="goodsCostMeta">0个货物 / 0件</div>
               </div>
               <div class="metric highlight">
-                <div class="label">最终报价</div>
+                <div class="metric-title-row">
+                  <div class="label">最终报价</div>
+                  <span class="quote-currency-pill" id="finalQuotePrimaryCurrency">USD</span>
+                </div>
                 <div class="value-group">
-                  <div class="value-sub">
-                    <span class="currency">USD</span>
-                    <span id="finalQuoteUsd">0</span>
-                  </div>
-                  <div class="value-sub">
-                    <span class="currency">RMB</span>
-                    <span id="finalQuoteRmb">¥0</span>
+                  <div class="primary-quote" id="finalQuotePrimaryValue">0</div>
+                  <div class="quote-breakdown" aria-label="报价折算">
+                    <div class="value-sub">
+                      <span class="currency">USD</span>
+                      <span id="finalQuoteUsd">0</span>
+                    </div>
+                    <div class="value-sub">
+                      <span class="currency">EUR</span>
+                      <span id="finalQuoteEur">0</span>
+                    </div>
+                    <div class="value-sub">
+                      <span class="currency">RMB</span>
+                      <span id="finalQuoteRmb">¥0</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -234,7 +263,7 @@
                     <th>方案</th>
                     <th>物流费</th>
                     <th>总成本</th>
-                    <th>报价USD</th>
+                    <th id="summaryQuoteHeader">报价USD</th>
                     <th>净利润</th>
                     <th>净利率</th>
                   </tr>
@@ -243,7 +272,7 @@
               </table>
             </div>
             <p class="note" id="termNote"></p>
-            <p class="note" id="rateSource">汇率可手动填写；公开接口数据可能每日更新，不等同银行结汇实时成交价。</p>
+            <p class="note" id="rateSource">点击同步获取会同时更新USD/CNY和EUR/CNY；公开接口数据可能每日更新，不等同银行结汇实时成交价。</p>
           </div>
         </section>
 

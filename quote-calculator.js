@@ -1,8 +1,8 @@
 const state = {
   schemes: ["A货代", "B货代"],
   cargo: [
-    { name: "大理石马", spec: "实际出货尺寸", length: 2.1, height: 2.1, width: 0.5, weight: 2200, qty: 5, unitPrice: 20000, taxRate: 13 },
-    { name: "不锈钢猎鹰", spec: "实际出货尺寸", length: 3, height: 2, width: 0.8, weight: 500, qty: 1, unitPrice: 40000, taxRate: 0 }
+    { name: "大理石马", spec: "实际出货尺寸", length: 210, height: 210, width: 50, weight: 2200, qty: 5, unitPrice: 20000, taxRate: 13 },
+    { name: "不锈钢猎鹰", spec: "实际出货尺寸", length: 300, height: 200, width: 80, weight: 500, qty: 1, unitPrice: 40000, taxRate: 0 }
   ],
   freight: [
     { scheme: "A货代", item: "船运费用", amount: 20300, included: true },
@@ -28,6 +28,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
 const money = (value) => `¥${fmt.format(Math.round(value || 0))}`;
+const currencySymbols = { USD: "USD", RMB: "RMB", EUR: "EUR" };
 const pct = (value) => `${(Number.isFinite(value) ? value : 0).toFixed(2)}%`;
 const cleanNum = (value) => Number.parseFloat(value) || 0;
 const escapeXml = (value) => String(value ?? "").replace(/[<>&"']/g, (ch) => ({
@@ -70,6 +71,21 @@ function cargoTotal(row) {
   return cleanNum(row.unitPrice) * cleanNum(row.qty) + cargoTax(row);
 }
 
+function normalizeCargoDimensions(cargo = []) {
+  const rowsWithDims = cargo.filter((row) => [row.length, row.height, row.width].some((value) => cleanNum(value) > 0));
+  const looksLikeMeters = rowsWithDims.length > 0 && rowsWithDims.every((row) => {
+    const dims = [cleanNum(row.length), cleanNum(row.height), cleanNum(row.width)].filter((value) => value > 0);
+    return dims.length && dims.every((value) => value <= 20);
+  });
+  if (!looksLikeMeters) return cargo;
+  return cargo.map((row) => ({
+    ...row,
+    length: cleanNum(row.length) ? Math.round(cleanNum(row.length) * 100) : row.length,
+    height: cleanNum(row.height) ? Math.round(cleanNum(row.height) * 100) : row.height,
+    width: cleanNum(row.width) ? Math.round(cleanNum(row.width) * 100) : row.width
+  }));
+}
+
 function totalCargoQty() {
   return state.cargo.reduce((sum, row) => sum + cleanNum(row.qty), 0);
 }
@@ -81,8 +97,50 @@ function quoteUnitUsd() {
   return qty ? selected.quoteUsd / qty : 0;
 }
 
+function quoteUnitByCurrency(currency) {
+  const result = calculate();
+  const selected = getBestScheme(result.schemes) || result.schemes[0];
+  const qty = totalCargoQty();
+  if (!qty || !selected) return 0;
+  return quoteValueByCurrency(selected, currency) / qty;
+}
+
 function quoteLineUsd(row) {
   return quoteUnitUsd() * cleanNum(row.qty);
+}
+
+function quoteLineByCurrency(row, currency) {
+  return quoteUnitByCurrency(currency) * cleanNum(row.qty);
+}
+
+function quoteValueByCurrency(row, currency) {
+  if (currency === "RMB") return row.quoteRmb || 0;
+  if (currency === "EUR") return row.quoteEur || 0;
+  return row.quoteUsd || 0;
+}
+
+function formatQuoteMoney(value, currency) {
+  if (currency === "RMB") return `¥${fmt.format(Math.round(value || 0))}`;
+  if (currency === "EUR") return `€${fmt.format(Math.round(value || 0))}`;
+  return `$${fmt.format(Math.round(value || 0))}`;
+}
+
+function formatPrimaryQuote(value, currency) {
+  return formatQuoteMoney(value, currency);
+}
+
+function goodsCostMetaText() {
+  const cargoCount = state.cargo.length;
+  const qty = totalCargoQty();
+  const taxedCount = state.cargo.filter((row) => cleanNum(row.taxRate) > 0).length;
+  const qtyText = Number.isInteger(qty) ? fmt.format(qty) : qty.toFixed(2);
+  const taxText = taxedCount ? `${taxedCount}行含税` : "未计税费";
+  return `${cargoCount}个货物 / ${qtyText}件 / ${taxText}`;
+}
+
+function cargoSizeCm(row) {
+  const size = [row.length, row.width, row.height].filter((value) => cleanNum(value) > 0).join(" x ");
+  return size ? `${size} cm` : "";
 }
 
 function getInputs() {
@@ -94,6 +152,8 @@ function getInputs() {
     destination: $("destination").value.trim(),
     validUntil: $("validUntil").value.trim(),
     exchangeRate: cleanNum($("exchangeRate").value),
+    eurExchangeRate: cleanNum($("eurExchangeRate").value),
+    outputCurrency: $("outputCurrency").value || "USD",
     targetProfit: cleanNum($("targetProfit").value),
     selectedScheme: $("selectedScheme").value,
     notes: $("notes").value.trim()
@@ -109,6 +169,8 @@ function getRawInputs() {
     destination: $("destination").value.trim(),
     validUntil: $("validUntil").value.trim(),
     exchangeRate: $("exchangeRate").value,
+    eurExchangeRate: $("eurExchangeRate").value,
+    outputCurrency: $("outputCurrency").value,
     targetProfit: $("targetProfit").value,
     selectedScheme: $("selectedScheme").value,
     notes: $("notes").value
@@ -170,7 +232,7 @@ function loadDraftOnStart() {
     const snapshot = JSON.parse(localStorage.getItem(storageDraftKey) || localStorage.getItem("quote-calculator-data") || "null");
     if (!snapshot) return;
     applyInputs(snapshot.inputs);
-    state.cargo = Array.isArray(snapshot.cargo) ? snapshot.cargo : state.cargo;
+    state.cargo = Array.isArray(snapshot.cargo) ? normalizeCargoDimensions(snapshot.cargo) : state.cargo;
     state.freight = Array.isArray(snapshot.freight) ? snapshot.freight : state.freight;
     state.schemes = Array.isArray(snapshot.schemes) ? snapshot.schemes : getSchemeIds();
     lastSavedSignature = snapshotSignature(getSnapshot("启动"));
@@ -242,13 +304,14 @@ function calculate() {
     const quoteRmb = divisor > 0.01 ? totalCost / divisor : totalCost * (1 + profitRate / 100);
     
     const quoteUsd = inputs.exchangeRate > 0 ? quoteRmb / inputs.exchangeRate : 0;
+    const quoteEur = inputs.eurExchangeRate > 0 ? quoteRmb / inputs.eurExchangeRate : 0;
     
     const targetPrice = quoteRmb;
     const profit = quoteRmb - totalCost;
     const margin = quoteRmb > 0 ? (profit / quoteRmb) * 100 : 0;
     const markup = totalCost > 0 ? (profit / totalCost) * 100 : 0;
     const hasQuotedCost = rows.some((row) => row.included && cleanNum(row.amount) > 0);
-    return { scheme, freight, totalCost, targetPrice, quoteRmb, quoteUsd, profit, margin, markup, hasQuotedCost };
+    return { scheme, freight, totalCost, targetPrice, quoteRmb, quoteUsd, quoteEur, profit, margin, markup, hasQuotedCost };
   });
   return { inputs, goodsCost, schemes };
 }
@@ -268,13 +331,25 @@ function renderCargo() {
   const tbody = $("cargoTable").querySelector("tbody");
   tbody.innerHTML = "";
   state.cargo.forEach((row, index) => {
+    const imageLabel = row.imageName ? escapeXml(row.imageName) : "上传";
+    const preview = row.imageData ? `<img class="cargo-thumb" alt="${escapeXml(row.imageName || row.name || "货物图片")}" src="${escapeXml(row.imageData)}">` : "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="cargo-name"><input value="${escapeXml(row.name)}" data-cargo="${index}" data-key="name"></td>
+      <td class="cargo-image">
+        <div class="image-cell">
+          ${preview}
+          <label class="image-upload">
+            <input type="file" accept="image/*" data-image-cargo="${index}">
+            <span>${imageLabel}</span>
+          </label>
+          ${row.imageData ? `<button class="btn danger small-btn" title="移除图片" type="button" data-remove-image="${index}">×</button>` : ""}
+        </div>
+      </td>
       <td class="cargo-spec"><input value="${escapeXml(row.spec)}" data-cargo="${index}" data-key="spec"></td>
-      <td class="cargo-dim"><input class="num" type="number" step="0.01" value="${row.length}" data-cargo="${index}" data-key="length"></td>
-      <td class="cargo-dim"><input class="num" type="number" step="0.01" value="${row.height}" data-cargo="${index}" data-key="height"></td>
-      <td class="cargo-dim"><input class="num" type="number" step="0.01" value="${row.width}" data-cargo="${index}" data-key="width"></td>
+      <td class="cargo-dim"><input class="num" type="number" step="1" value="${row.length}" data-cargo="${index}" data-key="length"></td>
+      <td class="cargo-dim"><input class="num" type="number" step="1" value="${row.height}" data-cargo="${index}" data-key="height"></td>
+      <td class="cargo-dim"><input class="num" type="number" step="1" value="${row.width}" data-cargo="${index}" data-key="width"></td>
       <td class="cargo-weight"><input class="num" type="number" step="1" value="${row.weight}" data-cargo="${index}" data-key="weight"></td>
       <td class="cargo-qty"><input class="num" type="number" step="1" value="${row.qty}" data-cargo="${index}" data-key="qty"></td>
       <td class="cargo-price"><input class="num" type="number" step="1" value="${row.unitPrice}" data-cargo="${index}" data-key="unitPrice"></td>
@@ -364,11 +439,15 @@ function renderSummary() {
   $("termPill").textContent = result.inputs.tradeTerm;
   $("selectedSchemePill").textContent = `${selected.scheme} 最优`;
   $("goodsCost").textContent = money(result.goodsCost);
+  $("goodsCostMeta").textContent = goodsCostMetaText();
   
   // 更新最终报价展示
-  const finalQuoteUsdVal = Math.round(selected.quoteUsd);
-  $("finalQuoteUsd").textContent = fmt.format(finalQuoteUsdVal);
+  $("finalQuoteUsd").textContent = formatQuoteMoney(selected.quoteUsd, "USD");
+  $("finalQuoteEur").textContent = formatQuoteMoney(selected.quoteEur, "EUR");
   $("finalQuoteRmb").textContent = money(selected.quoteRmb);
+  $("finalQuotePrimaryCurrency").textContent = result.inputs.outputCurrency;
+  $("finalQuotePrimaryValue").textContent = formatPrimaryQuote(quoteValueByCurrency(selected, result.inputs.outputCurrency), result.inputs.outputCurrency);
+  $("summaryQuoteHeader").textContent = `报价${result.inputs.outputCurrency}`;
   
   $("selectedCost").textContent = money(selected.totalCost);
   $("selectedProfit").textContent = money(selected.profit);
@@ -387,7 +466,7 @@ function renderSummary() {
       <td>${row.scheme}${row.scheme === selected.scheme ? "（最优）" : ""}</td>
       <td class="money">${fmt.format(row.freight)}</td>
       <td class="money">${fmt.format(row.totalCost)}</td>
-      <td class="money">${fmt.format(Math.round(row.quoteUsd))}</td>
+      <td class="money">${fmt.format(Math.round(quoteValueByCurrency(row, result.inputs.outputCurrency)))}</td>
       <td class="money">${fmt.format(row.profit)}</td>
       <td class="money">${pct(row.margin)}</td>
     `;
@@ -414,7 +493,10 @@ function updateStateOnInput(event) {
   
   let changed = false;
   
-  if (target.matches("[data-cargo]")) {
+  if (target.matches("[data-image-cargo]")) {
+    updateCargoImage(target);
+    return;
+  } else if (target.matches("[data-cargo]")) {
     const row = state.cargo[Number(target.dataset.cargo)];
     const key = target.dataset.key;
     row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
@@ -468,7 +550,7 @@ function updateStateOnChange(event) {
 }
 
 function addCargo() {
-  state.cargo.push({ name: "", spec: "", length: 0, height: 0, width: 0, weight: 0, qty: 1, unitPrice: 0, taxRate: 0 });
+  state.cargo.push({ name: "", spec: "", length: 0, height: 0, width: 0, weight: 0, qty: 1, unitPrice: 0, taxRate: 0, imageName: "", imageData: "" });
   syncAndRender();
   scheduleAutoSave();
 }
@@ -532,6 +614,8 @@ function clearInputFields() {
   $("destination").value = "";
   $("validUntil").value = "";
   $("exchangeRate").value = "7.2";
+  $("eurExchangeRate").value = "7.8";
+  $("outputCurrency").value = "USD";
   $("targetProfit").value = "15";
   $("notes").value = "";
 }
@@ -557,6 +641,12 @@ function tx(lang, zh, en) {
 
 function yesNo(value, lang) {
   return value ? tx(lang, "是", "Yes") : tx(lang, "否", "No");
+}
+
+function currencyLabel(currency, lang = "zh") {
+  if (currency === "RMB") return tx(lang, "人民币", "RMB");
+  if (currency === "EUR") return tx(lang, "欧元", "EUR");
+  return tx(lang, "美元", "USD");
 }
 
 function freightName(scheme, lang) {
@@ -595,15 +685,17 @@ function buildInternalMarkdown(lang = "zh") {
   lines.push(`- ${tx(lang, "目的港/目的地", "Destination")}：${escapeMd(inputs.destination)}`);
   lines.push(`- ${tx(lang, "报价有效期", "Valid Until")}：${escapeMd(inputs.validUntil)}`);
   lines.push(`- ${tx(lang, "USD兑RMB汇率", "USD/RMB Rate")}：${inputs.exchangeRate}`);
+  lines.push(`- ${tx(lang, "EUR兑RMB汇率", "EUR/RMB Rate")}：${inputs.eurExchangeRate}`);
+  lines.push(`- ${tx(lang, "最终报价币种", "Final Currency")}：${inputs.outputCurrency}`);
   lines.push("");
   lines.push(`## ${tx(lang, "货物成本", "Cargo Cost")}`);
   lines.push("");
-  lines.push(`|${tx(lang, "货物名称", "Cargo")}|${tx(lang, "规格", "Specification")}|${tx(lang, "长(m)", "Length(m)")}|${tx(lang, "高(m)", "Height(m)")}|${tx(lang, "宽(m)", "Width(m)")}|${tx(lang, "单箱KG", "KG/Unit")}|${tx(lang, "数量", "Qty")}|${tx(lang, "单价RMB", "Unit Price RMB")}|${tx(lang, "税率", "Tax Rate")}|${tx(lang, "税费RMB", "Tax RMB")}|${tx(lang, "合计RMB", "Total RMB")}|${tx(lang, "平均报价单价USD", "Avg Quote Unit USD")}|${tx(lang, "报价金额USD", "Quote Amount USD")}|`);
-  lines.push("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  lines.push(`|${tx(lang, "货物名称", "Cargo")}|${tx(lang, "图片", "Image")}|${tx(lang, "规格", "Specification")}|${tx(lang, "长(cm)", "Length(cm)")}|${tx(lang, "高(cm)", "Height(cm)")}|${tx(lang, "宽(cm)", "Width(cm)")}|${tx(lang, "单箱KG", "KG/Unit")}|${tx(lang, "数量", "Qty")}|${tx(lang, "单价RMB", "Unit Price RMB")}|${tx(lang, "税率", "Tax Rate")}|${tx(lang, "税费RMB", "Tax RMB")}|${tx(lang, "合计RMB", "Total RMB")}|${tx(lang, "平均报价单价", "Avg Quote Unit")} ${inputs.outputCurrency}|${tx(lang, "报价金额", "Quote Amount")} ${inputs.outputCurrency}|`);
+  lines.push("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
   state.cargo.forEach((row) => {
-    lines.push(`|${escapeMd(row.name)}|${escapeMd(row.spec)}|${row.length}|${row.height}|${row.width}|${fmt.format(row.weight)}|${row.qty}|${fmt.format(row.unitPrice)}|${row.taxRate}%|${fmt.format(cargoTax(row))}|${fmt.format(cargoTotal(row))}|${fmt.format(quoteUnitUsd())}|${fmt.format(quoteLineUsd(row))}|`);
+    lines.push(`|${escapeMd(row.name)}|${escapeMd(row.imageName || "")}|${escapeMd(row.spec)}|${row.length}|${row.height}|${row.width}|${fmt.format(row.weight)}|${row.qty}|${fmt.format(row.unitPrice)}|${row.taxRate}%|${fmt.format(cargoTax(row))}|${fmt.format(cargoTotal(row))}|${fmt.format(quoteUnitByCurrency(inputs.outputCurrency))}|${fmt.format(quoteLineByCurrency(row, inputs.outputCurrency))}|`);
   });
-  lines.push(`|**${tx(lang, "货物总成本", "Total Cargo Cost")}**||||||||||**${fmt.format(goodsCost)}**||**${fmt.format(selected.quoteUsd)}**|`);
+  lines.push(`|**${tx(lang, "货物总成本", "Total Cargo Cost")}**|||||||||||**${fmt.format(goodsCost)}**||**${fmt.format(quoteValueByCurrency(selected, inputs.outputCurrency))}**|`);
   lines.push("");
   lines.push(`## ${tx(lang, "货代费用", "Freight Forwarder Cost")}`);
   lines.push("");
@@ -621,10 +713,10 @@ function buildInternalMarkdown(lang = "zh") {
   });
   lines.push(`## ${tx(lang, "利润测算", "Profit Calculation")}`);
   lines.push("");
-  lines.push(`|${tx(lang, "方案", "Option")}|${tx(lang, "物流费RMB", "Logistics RMB")}|${tx(lang, "总成本RMB", "Total Cost RMB")}|${tx(lang, "报价USD", "Quote USD")}|${tx(lang, "最终报价RMB", "Final Quote RMB")}|${tx(lang, "净利润RMB", "Net Profit RMB")}|${tx(lang, "净利率", "Net Margin")}|${tx(lang, "成本加成率", "Markup")}|`);
-  lines.push("|---|---:|---:|---:|---:|---:|---:|---:|");
+  lines.push(`|${tx(lang, "方案", "Option")}|${tx(lang, "物流费RMB", "Logistics RMB")}|${tx(lang, "总成本RMB", "Total Cost RMB")}|${tx(lang, "报价USD", "Quote USD")}|${tx(lang, "报价EUR", "Quote EUR")}|${tx(lang, "最终报价RMB", "Final Quote RMB")}|${tx(lang, "净利润RMB", "Net Profit RMB")}|${tx(lang, "净利率", "Net Margin")}|${tx(lang, "成本加成率", "Markup")}|`);
+  lines.push("|---|---:|---:|---:|---:|---:|---:|---:|---:|");
   schemes.forEach((row) => {
-    lines.push(`|${freightName(row.scheme, lang)}|${fmt.format(row.freight)}|${fmt.format(row.totalCost)}|${fmt.format(Math.round(row.quoteUsd))}|${fmt.format(row.quoteRmb)}|${fmt.format(row.profit)}|${pct(row.margin)}|${pct(row.markup)}|`);
+    lines.push(`|${freightName(row.scheme, lang)}|${fmt.format(row.freight)}|${fmt.format(row.totalCost)}|${fmt.format(Math.round(row.quoteUsd))}|${fmt.format(Math.round(row.quoteEur))}|${fmt.format(row.quoteRmb)}|${fmt.format(row.profit)}|${pct(row.margin)}|${pct(row.markup)}|`);
   });
   lines.push("");
   lines.push(`${tx(lang, "自动推荐方案", "Recommended option")}：${freightName(selected.scheme, lang)}，${tx(lang, "预计净利润", "Estimated net profit")} ${fmt.format(selected.profit)} RMB。`);
@@ -649,14 +741,14 @@ function buildCustomerMarkdown(lang = "zh") {
   lines.push(`| ${tx(lang, "贸易术语", "Trade Term")} | ${inputs.tradeTerm} ${escapeMd(inputs.destination || tx(lang, "目的港", "Destination Port"))} |`);
   lines.push(`| ${tx(lang, "柜型", "Container Type")} | ${escapeMd(inputs.containerType)} |`);
   lines.push(`| ${tx(lang, "报价有效期", "Valid Until")} | ${escapeMd(inputs.validUntil)} |`);
-  lines.push(`| ${tx(lang, "报价金额", "Quotation Amount")} | **USD ${fmt.format(Math.round(selected.quoteUsd))}** |`);
+  lines.push(`| ${tx(lang, "报价金额", "Quotation Amount")} | **${formatQuoteMoney(quoteValueByCurrency(selected, inputs.outputCurrency), inputs.outputCurrency)}** |`);
   lines.push("");
   lines.push(`## ${tx(lang, "货物信息", "Cargo Information")}`);
   lines.push("");
-  lines.push(`| ${tx(lang, "货物名称", "Cargo")} | ${tx(lang, "规格", "Specification")} | ${tx(lang, "长(m)", "Length(m)")} | ${tx(lang, "高(m)", "Height(m)")} | ${tx(lang, "宽(m)", "Width(m)")} | ${tx(lang, "单箱KG", "KG/Unit")} | ${tx(lang, "数量", "Qty")} | ${tx(lang, "平均报价单价USD", "Avg Unit Price USD")} | ${tx(lang, "报价金额USD", "Amount USD")} |`);
-  lines.push("|---|---|---:|---:|---:|---:|---:|---:|---:|");
+  lines.push(`| ${tx(lang, "货物名称", "Cargo")} | ${tx(lang, "图片", "Image")} | ${tx(lang, "规格", "Specification")} | ${tx(lang, "长(cm)", "Length(cm)")} | ${tx(lang, "高(cm)", "Height(cm)")} | ${tx(lang, "宽(cm)", "Width(cm)")} | ${tx(lang, "单箱KG", "KG/Unit")} | ${tx(lang, "数量", "Qty")} | ${tx(lang, "平均报价单价", "Avg Unit Price")} ${inputs.outputCurrency} | ${tx(lang, "报价金额", "Amount")} ${inputs.outputCurrency} |`);
+  lines.push("|---|---|---|---:|---:|---:|---:|---:|---:|---:|");
   state.cargo.forEach((row) => {
-    lines.push(`|${escapeMd(row.name)}|${escapeMd(row.spec)}|${row.length}|${row.height}|${row.width}|${fmt.format(row.weight)}|${row.qty}|${fmt.format(quoteUnitUsd())}|${fmt.format(quoteLineUsd(row))}|`);
+    lines.push(`|${escapeMd(row.name)}|${escapeMd(row.imageName || "")}|${escapeMd(row.spec)}|${row.length}|${row.height}|${row.width}|${fmt.format(row.weight)}|${row.qty}|${fmt.format(quoteUnitByCurrency(inputs.outputCurrency))}|${fmt.format(quoteLineByCurrency(row, inputs.outputCurrency))}|`);
   });
   lines.push("");
   lines.push(`## ${tx(lang, "费用说明", "Cost Scope")}`);
@@ -717,13 +809,13 @@ function buildInternalExcelXml(lang = "zh") {
   const { inputs, goodsCost, schemes } = calculate();
   const selected = getBestScheme(schemes) || schemes[0];
   const cargoRows = [
-    xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "规格", "Specification"), tx(lang, "长(m)", "Length(m)"), tx(lang, "高(m)", "Height(m)"), tx(lang, "宽(m)", "Width(m)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), tx(lang, "单价RMB", "Unit Price RMB"), tx(lang, "税率%", "Tax Rate %"), tx(lang, "税费RMB", "Tax RMB"), tx(lang, "合计RMB", "Total RMB"), tx(lang, "平均报价单价USD", "Avg Quote Unit USD"), tx(lang, "报价金额USD", "Quote Amount USD")]),
+    xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "图片", "Image"), tx(lang, "规格", "Specification"), tx(lang, "长(cm)", "Length(cm)"), tx(lang, "高(cm)", "Height(cm)"), tx(lang, "宽(cm)", "Width(cm)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), tx(lang, "单价RMB", "Unit Price RMB"), tx(lang, "税率%", "Tax Rate %"), tx(lang, "税费RMB", "Tax RMB"), tx(lang, "合计RMB", "Total RMB"), `${tx(lang, "平均报价单价", "Avg Quote Unit")} ${inputs.outputCurrency}`, `${tx(lang, "报价金额", "Quote Amount")} ${inputs.outputCurrency}`]),
     ...state.cargo.map((row) => xmlRow([
-      row.name, row.spec,
+      row.name, row.imageName || "", row.spec,
       [row.length, "Number"], [row.height, "Number"], [row.width, "Number"], [row.weight, "Number"], [row.qty, "Number"],
-      [row.unitPrice, "Number"], [row.taxRate, "Number"], [cargoTax(row), "Number"], [cargoTotal(row), "Number"], [quoteUnitUsd(), "Number"], [quoteLineUsd(row), "Number"]
+      [row.unitPrice, "Number"], [row.taxRate, "Number"], [cargoTax(row), "Number"], [cargoTotal(row), "Number"], [quoteUnitByCurrency(inputs.outputCurrency), "Number"], [quoteLineByCurrency(row, inputs.outputCurrency), "Number"]
     ])),
-    xmlRow([tx(lang, "货物总成本", "Total Cargo Cost"), "", "", "", "", "", "", "", "", "", [goodsCost, "Number"], "", [selected.quoteUsd, "Number"]])
+    xmlRow([tx(lang, "货物总成本", "Total Cargo Cost"), "", "", "", "", "", "", "", "", "", "", [goodsCost, "Number"], "", [quoteValueByCurrency(selected, inputs.outputCurrency), "Number"]])
   ].join("");
 
   const freightRows = [
@@ -739,12 +831,14 @@ function buildInternalExcelXml(lang = "zh") {
     xmlRow([tx(lang, "目的港/目的地", "Destination"), inputs.destination]),
     xmlRow([tx(lang, "报价有效期", "Valid Until"), inputs.validUntil]),
     xmlRow([tx(lang, "USD兑RMB汇率", "USD/RMB Rate"), [inputs.exchangeRate, "Number"]]),
-    xmlRow([tx(lang, "最终客户报价USD", "Final Customer Quote USD"), [selected.quoteUsd, "Number"]]),
+    xmlRow([tx(lang, "EUR兑RMB汇率", "EUR/RMB Rate"), [inputs.eurExchangeRate, "Number"]]),
+    xmlRow([tx(lang, "最终报价币种", "Final Currency"), currencyLabel(inputs.outputCurrency, lang)]),
+    xmlRow([`${tx(lang, "最终客户报价", "Final Customer Quote")} ${inputs.outputCurrency}`, [quoteValueByCurrency(selected, inputs.outputCurrency), "Number"]]),
     xmlRow([tx(lang, "最终客户报价折合RMB", "Final Quote RMB"), [selected.quoteRmb, "Number"]]),
     xmlRow([""]),
-    xmlRow([tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "总成本RMB", "Total Cost RMB"), tx(lang, "报价USD", "Quote USD"), tx(lang, "最终报价RMB", "Final Quote RMB"), tx(lang, "净利润RMB", "Net Profit RMB"), tx(lang, "净利率%", "Net Margin %"), tx(lang, "成本加成率%", "Markup %")]),
+    xmlRow([tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "总成本RMB", "Total Cost RMB"), tx(lang, "报价USD", "Quote USD"), tx(lang, "报价EUR", "Quote EUR"), tx(lang, "最终报价RMB", "Final Quote RMB"), tx(lang, "净利润RMB", "Net Profit RMB"), tx(lang, "净利率%", "Net Margin %"), tx(lang, "成本加成率%", "Markup %")]),
     ...schemes.map((row) => xmlRow([
-      freightName(row.scheme, lang), [row.freight, "Number"], [row.totalCost, "Number"], [row.quoteUsd, "Number"], [row.quoteRmb, "Number"],
+      freightName(row.scheme, lang), [row.freight, "Number"], [row.totalCost, "Number"], [row.quoteUsd, "Number"], [row.quoteEur, "Number"], [row.quoteRmb, "Number"],
       [row.profit, "Number"], [row.margin, "Number"], [row.markup, "Number"]
     ])),
     xmlRow([""]),
@@ -773,12 +867,12 @@ function buildCustomerExcelXml(lang = "zh") {
     xmlRow([tx(lang, "贸易术语", "Trade Term"), `${inputs.tradeTerm} ${inputs.destination || tx(lang, "目的港", "Destination Port")}`]),
     xmlRow([tx(lang, "柜型", "Container Type"), inputs.containerType]),
     xmlRow([tx(lang, "报价有效期", "Valid Until"), inputs.validUntil]),
-    xmlRow([tx(lang, "报价金额", "Quotation Amount"), `USD ${fmt.format(Math.round(selected.quoteUsd))}`]),
+    xmlRow([tx(lang, "报价金额", "Quotation Amount"), formatQuoteMoney(quoteValueByCurrency(selected, inputs.outputCurrency), inputs.outputCurrency)]),
     xmlRow([""]),
-    xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "规格", "Specification"), tx(lang, "长(m)", "Length(m)"), tx(lang, "高(m)", "Height(m)"), tx(lang, "宽(m)", "Width(m)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), tx(lang, "平均报价单价USD", "Avg Unit Price USD"), tx(lang, "报价金额USD", "Amount USD")]),
+    xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "图片", "Image"), tx(lang, "规格", "Specification"), tx(lang, "长(cm)", "Length(cm)"), tx(lang, "高(cm)", "Height(cm)"), tx(lang, "宽(cm)", "Width(cm)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), `${tx(lang, "平均报价单价", "Avg Unit Price")} ${inputs.outputCurrency}`, `${tx(lang, "报价金额", "Amount")} ${inputs.outputCurrency}`]),
     ...state.cargo.map((row) => xmlRow([
-      row.name, row.spec,
-      [row.length, "Number"], [row.height, "Number"], [row.width, "Number"], [row.weight, "Number"], [row.qty, "Number"], [quoteUnitUsd(), "Number"], [quoteLineUsd(row), "Number"]
+      row.name, row.imageName || "", row.spec,
+      [row.length, "Number"], [row.height, "Number"], [row.width, "Number"], [row.weight, "Number"], [row.qty, "Number"], [quoteUnitByCurrency(inputs.outputCurrency), "Number"], [quoteLineByCurrency(row, inputs.outputCurrency), "Number"]
     ])),
     xmlRow([""]),
     xmlRow([tx(lang, "费用说明", "Cost Scope")]),
@@ -815,6 +909,7 @@ async function downloadExcel(mode, lang, suffix, langSuffix) {
   try {
     const snapshot = getSnapshot("Excel导出");
     snapshot.inputs.exchangeRate = cleanNum(snapshot.inputs.exchangeRate);
+    snapshot.inputs.eurExchangeRate = cleanNum(snapshot.inputs.eurExchangeRate);
     snapshot.inputs.targetProfit = cleanNum(snapshot.inputs.targetProfit);
 
     const resp = await fetch(`/api/export?mode=${mode}&lang=${lang}`, {
@@ -867,29 +962,86 @@ async function fetchUsdCnyRate() {
   const source = $("rateSource");
   const button = $("fetchRateBtn");
   button.disabled = true;
-  button.textContent = "获取中";
-  source.textContent = "正在获取USD/CNY汇率...";
+  button.innerHTML = "<span>同步中</span><small>USD/EUR</small>";
+  source.textContent = "正在获取USD/CNY和EUR/CNY汇率...";
   try {
     const response = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     const rate = data?.rates?.CNY;
+    const eurPerUsd = data?.rates?.EUR;
     if (!rate || data.result !== "success") throw new Error("汇率数据不可用");
-    $("exchangeRate").value = Number(rate).toFixed(6);
+    $("exchangeRate").value = Number(rate).toFixed(1);
+    if (eurPerUsd > 0) $("eurExchangeRate").value = Number(rate / eurPerUsd).toFixed(1);
     const updated = data.time_last_update_utc ? `，更新时间：${data.time_last_update_utc}` : "";
-    source.innerHTML = `已获取USD/CNY ${Number(rate).toFixed(6)}${updated}。Rates by <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Exchange Rate API</a>。`;
+    source.innerHTML = `已获取USD/CNY ${Number(rate).toFixed(1)}，EUR/CNY ${Number($("eurExchangeRate").value).toFixed(1)}${updated}。Rates by <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Exchange Rate API</a>。`;
     renderSummary();
   } catch (error) {
     source.textContent = "汇率获取失败，请继续手动填写；公开接口可能受网络、跨域或限流影响。";
   } finally {
     button.disabled = false;
-    button.textContent = "获取";
+    button.innerHTML = "<span>同步获取</span><small>USD/EUR</small>";
+  }
+}
+
+function readImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      image.onerror = reject;
+      image.onload = () => {
+        const maxSize = 900;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve({
+          imageName: randomImageName(),
+          imageData: canvas.toDataURL("image/jpeg", 0.82)
+        });
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function randomImageName() {
+  const bytes = new Uint8Array(8);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(bytes);
+  } else {
+    bytes.forEach((_, index) => {
+      bytes[index] = Math.floor(Math.random() * 256);
+    });
+  }
+  const random = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `cargo_${Date.now().toString(36)}_${random}.jpg`;
+}
+
+async function updateCargoImage(input) {
+  const index = Number(input.dataset.imageCargo);
+  const file = input.files && input.files[0];
+  if (!file || !state.cargo[index]) return;
+  try {
+    const image = await readImageFile(file);
+    state.cargo[index].imageName = image.imageName;
+    state.cargo[index].imageData = image.imageData;
+    syncAndRender();
+    scheduleAutoSave();
+  } catch (error) {
+    alert("图片读取失败，请换一张图片重试。");
   }
 }
 
 async function archiveSnapshot() {
   const snapshot = getSnapshot("服务器归档");
   snapshot.inputs.exchangeRate = cleanNum(snapshot.inputs.exchangeRate);
+  snapshot.inputs.eurExchangeRate = cleanNum(snapshot.inputs.eurExchangeRate);
   snapshot.inputs.targetProfit = cleanNum(snapshot.inputs.targetProfit);
 
   try {
@@ -955,7 +1107,7 @@ async function loadSnapshot(id) {
     const data = await resp.json();
     
     applyInputs(data.inputs);
-    state.cargo = Array.isArray(data.cargo) ? data.cargo : state.cargo;
+    state.cargo = Array.isArray(data.cargo) ? normalizeCargoDimensions(data.cargo) : state.cargo;
     state.freight = Array.isArray(data.freight) ? data.freight : state.freight;
     state.schemes = Array.isArray(data.schemes) ? data.schemes : getSchemeIds();
     
@@ -1298,12 +1450,13 @@ function clearPi() {
 
 function importQuoteToPi() {
   const inputs = getInputs();
+  const currency = inputs.outputCurrency || "USD";
   $("piSellerCompany").value = inputs.companyName;
   $("piBuyerCompany").value = inputs.projectName;
   $("piIncoterms").value = inputs.tradeTerm;
   $("piDestination").value = inputs.destination;
   $("piValidity").value = inputs.validUntil || $("piValidity").value;
-  $("piCurrency").value = "USD";
+  $("piCurrency").value = currency;
   $("piNo").value = $("piNo").value || defaultPiNo();
   $("piIssueDate").value = $("piIssueDate").value || todayISO();
   $("piPaymentReference").value = `${$("piNo").value} - ${inputs.projectName}`;
@@ -1311,10 +1464,10 @@ function importQuoteToPi() {
     product: row.name,
     material: "",
     finish: "",
-    size: [row.length, row.width, row.height].filter((value) => cleanNum(value) > 0).join(" x "),
+    size: cargoSizeCm(row),
     qty: cleanNum(row.qty) || 1,
     unit: "set",
-    unitPrice: Math.round(quoteUnitUsd() * 100) / 100,
+    unitPrice: Math.round(quoteUnitByCurrency(currency) * 100) / 100,
     remarks: row.spec
   }));
   if (!piState.items.length) addPiItem();
@@ -1356,12 +1509,22 @@ document.addEventListener("input", updatePiForm);
 document.addEventListener("change", updatePiForm);
 document.addEventListener("click", (event) => {
   const cargoIndex = event.target.dataset.deleteCargo;
+  const removeImageIndex = event.target.dataset.removeImage;
   const freightIndex = event.target.dataset.deleteFreight;
   const piItemIndex = event.target.dataset.deletePiItem;
   if (cargoIndex !== undefined) {
     state.cargo.splice(Number(cargoIndex), 1);
     syncAndRender();
     scheduleAutoSave();
+  }
+  if (removeImageIndex !== undefined) {
+    const row = state.cargo[Number(removeImageIndex)];
+    if (row) {
+      row.imageName = "";
+      row.imageData = "";
+      syncAndRender();
+      scheduleAutoSave();
+    }
   }
   if (freightIndex !== undefined) {
     state.freight.splice(Number(freightIndex), 1);

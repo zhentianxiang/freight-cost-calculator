@@ -205,6 +205,34 @@ h1 {
   gap: 8px;
 }
 
+.rate-sync-field {
+  align-self: end;
+}
+
+.rate-sync-btn {
+  width: 100%;
+  min-height: 36px;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  color: var(--primary);
+  border-color: #9fc5d4;
+  background: #f7fcfd;
+  font-weight: 800;
+}
+
+.rate-sync-btn small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.rate-sync-btn:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 label {
   color: var(--muted);
   font-size: 12px;
@@ -257,6 +285,10 @@ table {
 
 .cargo-name {
   width: 120px;
+}
+
+.cargo-image {
+  width: 132px;
 }
 
 .cargo-spec {
@@ -333,6 +365,48 @@ table {
 
 .row-action {
   width: 44px;
+}
+
+.image-cell {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  min-height: 44px;
+}
+
+.cargo-thumb {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.image-upload {
+  min-width: 0;
+  cursor: pointer;
+}
+
+.image-upload input {
+  display: none;
+}
+
+.image-upload span {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--primary);
+  background: #f9fcfd;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 th,
@@ -412,6 +486,8 @@ td select:focus {
   border-radius: 8px;
   padding: 12px;
   background: #fbfcfd;
+  display: flex;
+  flex-direction: column;
 }
 
 .metric .label {
@@ -424,17 +500,63 @@ td select:focus {
 .metric.highlight {
   background: var(--primary-2);
   border-color: #bad3df;
+  gap: 10px;
 }
 
 .value-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.metric-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-title-row .label {
+  margin-bottom: 0;
+}
+
+.quote-currency-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--primary);
+  border: 1px solid #bad3df;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.primary-quote {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 850;
+  letter-spacing: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.quote-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .value-sub {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  padding: 7px 6px;
+  border: 1px solid rgba(23, 95, 120, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .value-sub .currency {
@@ -445,10 +567,11 @@ td select:focus {
 }
 
 .value-sub span:not(.currency) {
-  font-size: 22px;
+  font-size: 14px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+  white-space: nowrap;
 }
 
 .metric .value {
@@ -457,6 +580,15 @@ td select:focus {
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+.metric-foot {
+  margin-top: auto;
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .metric.green {

@@ -1,7 +1,11 @@
 package quote
 
 import (
+	"encoding/base64"
 	"fmt"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"math"
 	"strings"
 
@@ -199,29 +203,30 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	goodsCost, summaries := CalculateSchemes(snap)
 	best := bestScheme(summaries)
 	qty := totalCargoQty(snap.Cargo)
-	unitUsd := quoteUnitUsd(best.QuoteUsd, qty)
+	unitQuote := quoteUnitUsd(quoteValue(best, inputs.OutputCurrency), qty)
 
 	sheet1 := safeSheetName(tx(lang, "内部核算汇总", "Internal Master Summary"))
 	f.SetSheetName("Sheet1", sheet1)
 
-	// 设置列宽以适应最宽的货物明细表（A-M共13列）
+	// 设置列宽以适应最宽的货物明细表（A-N共14列）
 	f.SetColWidth(sheet1, "A", "A", 25)
-	f.SetColWidth(sheet1, "B", "B", 18)
-	f.SetColWidth(sheet1, "C", "F", 12)
-	f.SetColWidth(sheet1, "G", "M", 15)
+	f.SetColWidth(sheet1, "B", "B", 15)
+	f.SetColWidth(sheet1, "C", "C", 18)
+	f.SetColWidth(sheet1, "D", "G", 12)
+	f.SetColWidth(sheet1, "H", "N", 15)
 
 	row := 1
-	// 1. 标题跨全列 (A:M)
+	// 1. 标题跨全列 (A:N)
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), inputs.ProjectName+" "+tx(lang, "完整报价测算报告", "Complete Quotation Report"), s.TitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.TitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.TitleStyle)
 	row++
 	row++
 
 	// 2. 基础信息
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "基础信息", "Basic Info"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SectionTitleStyle)
 	row++
 
 	infoRows := []struct {
@@ -233,7 +238,9 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		{tx(lang, "柜型", "Container"), inputs.ContainerType},
 		{tx(lang, "目的港", "Destination"), inputs.Destination},
 		{tx(lang, "报价有效期", "Valid Until"), inputs.ValidUntil},
-		{tx(lang, "美元汇率", "USD/RMB Rate"), fmt.Sprintf("%.6f", inputs.ExchangeRate)},
+		{tx(lang, "美元汇率", "USD/RMB Rate"), fmt.Sprintf("%.1f", inputs.ExchangeRate)},
+		{tx(lang, "欧元汇率", "EUR/RMB Rate"), fmt.Sprintf("%.1f", inputs.EurExchangeRate)},
+		{tx(lang, "最终报价币种", "Final Currency"), currencyName(inputs.OutputCurrency, lang)},
 		{tx(lang, "目标利润率", "Target Profit"), fmtPct(inputs.TargetProfit)},
 	}
 	for _, ir := range infoRows {
@@ -242,16 +249,16 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		}
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), ir.label, s.BoldStyle)
 		setVal(f, sheet1, fmt.Sprintf("B%d", row), ir.value, s.DataStyle)
-		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row), s.DataStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("N%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("N%d", row), s.DataStyle)
 		row++
 	}
 	row++
 
 	// 3. 利润测算汇总
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "利润测算", "Profit Analysis"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SectionTitleStyle)
 	row++
 
 	profitRows := []struct {
@@ -260,14 +267,16 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		style int
 	}{
 		{tx(lang, "货物总成本", "Total Cargo Cost"), goodsCost, s.MoneyStyle},
+		{fmt.Sprintf("%s(%s)", tx(lang, "最终客户报价", "Final Quote"), inputs.OutputCurrency), quoteValue(best, inputs.OutputCurrency), s.MoneyStyle},
 		{tx(lang, "最终客户报价(USD)", "Final Quote USD"), best.QuoteUsd, s.MoneyStyle},
+		{tx(lang, "最终客户报价(EUR)", "Final Quote EUR"), best.QuoteEur, s.MoneyStyle},
 		{tx(lang, "最终报价折合RMB", "Quote in RMB"), best.QuoteRmb, s.MoneyStyle},
 	}
 	for _, pr := range profitRows {
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), pr.label, s.BoldStyle)
 		setMoney(f, sheet1, fmt.Sprintf("B%d", row), pr.value, pr.style)
-		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row), pr.style)
+		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("N%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("N%d", row), pr.style)
 		row++
 	}
 
@@ -276,31 +285,32 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		tx(lang, "总成本", "Total Cost"), fmtMoney(best.TotalCost),
 		tx(lang, "净利润", "Net Profit"), fmtMoney(best.Profit))
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), bestMsg, s.HighlightStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.HighlightStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.HighlightStyle)
 	row++
 	row++
 
-	// 4. 详细货物清单 (A:M)
+	// 4. 详细货物清单 (A:N)
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "货物明细", "Cargo Details"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SectionTitleStyle)
 	row++
 
 	cargoHeaders := []string{
 		tx(lang, "货物名称", "Cargo"),
+		tx(lang, "图片", "Image"),
 		tx(lang, "规格", "Spec"),
-		tx(lang, "长(m)", "L(m)"),
-		tx(lang, "高(m)", "H(m)"),
-		tx(lang, "宽(m)", "W(m)"),
+		tx(lang, "长(cm)", "L(cm)"),
+		tx(lang, "高(cm)", "H(cm)"),
+		tx(lang, "宽(cm)", "W(cm)"),
 		tx(lang, "重量(kg)", "Wt(kg)"),
 		tx(lang, "数量", "Qty"),
 		tx(lang, "单价RMB", "Price"),
 		tx(lang, "税率%", "Tax%"),
 		tx(lang, "税费RMB", "Tax Amt"),
 		tx(lang, "合计RMB", "Total RMB"),
-		tx(lang, "单价USD", "Unit USD"),
-		tx(lang, "金额USD", "Total USD"),
+		fmt.Sprintf("%s%s", tx(lang, "单价", "Unit "), inputs.OutputCurrency),
+		fmt.Sprintf("%s%s", tx(lang, "金额", "Total "), inputs.OutputCurrency),
 	}
 	for i, h := range cargoHeaders {
 		col := string(rune('A' + i))
@@ -316,50 +326,53 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 			st = s.AltDataStyle
 			mst = s.AltMoneyStyle
 		}
+		f.SetRowHeight(sheet1, row, 58)
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), cr.Name, st)
-		setVal(f, sheet1, fmt.Sprintf("B%d", row), cr.Spec, st)
-		setMoney(f, sheet1, fmt.Sprintf("C%d", row), cr.Length, mst)
-		setMoney(f, sheet1, fmt.Sprintf("D%d", row), cr.Height, mst)
-		setMoney(f, sheet1, fmt.Sprintf("E%d", row), cr.Width, mst)
-		setMoney(f, sheet1, fmt.Sprintf("F%d", row), cr.Weight, mst)
-		setMoney(f, sheet1, fmt.Sprintf("G%d", row), cr.Qty, mst)
-		setMoney(f, sheet1, fmt.Sprintf("H%d", row), cr.UnitPrice, mst)
-		setVal(f, sheet1, fmt.Sprintf("I%d", row), fmtPct(cr.TaxRate), st)
-		setMoney(f, sheet1, fmt.Sprintf("J%d", row), cargoTax(cr), mst)
-		setMoney(f, sheet1, fmt.Sprintf("K%d", row), cargoTotal(cr), mst)
-		setMoney(f, sheet1, fmt.Sprintf("L%d", row), unitUsd, mst)
-		setMoney(f, sheet1, fmt.Sprintf("M%d", row), quoteLineUsd(cr, unitUsd), mst)
+		setVal(f, sheet1, fmt.Sprintf("B%d", row), imageCellText(cr), st)
+		addCargoPicture(f, sheet1, fmt.Sprintf("B%d", row), cr)
+		setVal(f, sheet1, fmt.Sprintf("C%d", row), cr.Spec, st)
+		setMoney(f, sheet1, fmt.Sprintf("D%d", row), cr.Length, mst)
+		setMoney(f, sheet1, fmt.Sprintf("E%d", row), cr.Height, mst)
+		setMoney(f, sheet1, fmt.Sprintf("F%d", row), cr.Width, mst)
+		setMoney(f, sheet1, fmt.Sprintf("G%d", row), cr.Weight, mst)
+		setMoney(f, sheet1, fmt.Sprintf("H%d", row), cr.Qty, mst)
+		setMoney(f, sheet1, fmt.Sprintf("I%d", row), cr.UnitPrice, mst)
+		setVal(f, sheet1, fmt.Sprintf("J%d", row), fmtPct(cr.TaxRate), st)
+		setMoney(f, sheet1, fmt.Sprintf("K%d", row), cargoTax(cr), mst)
+		setMoney(f, sheet1, fmt.Sprintf("L%d", row), cargoTotal(cr), mst)
+		setMoney(f, sheet1, fmt.Sprintf("M%d", row), unitQuote, mst)
+		setMoney(f, sheet1, fmt.Sprintf("N%d", row), quoteLineUsd(cr, unitQuote), mst)
 		row++
 	}
 	row++
 
 	// 5. 详细货代费用拆解
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "货代费用明细", "Freight Itemization"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SectionTitleStyle)
 	row++
 
 	for _, scheme := range snap.Schemes {
 		// 方案子标题
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), freightName(scheme, lang), s.SubHeaderStyle)
-		f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SubHeaderStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SubHeaderStyle)
 		row++
 
 		schemeItems := filterFreight(snap.Freight, scheme)
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "费用项目", "Item"), s.HeaderStyle)
 		setVal(f, sheet1, fmt.Sprintf("B%d", row), tx(lang, "金额RMB", "Amount"), s.HeaderStyle)
 		setVal(f, sheet1, fmt.Sprintf("C%d", row), tx(lang, "计入报价", "Included"), s.HeaderStyle)
-		f.MergeCell(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row), s.HeaderStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("N%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("N%d", row), s.HeaderStyle)
 		row++
 
 		for _, item := range schemeItems {
 			setVal(f, sheet1, fmt.Sprintf("A%d", row), item.Item, s.DataStyle)
 			setMoney(f, sheet1, fmt.Sprintf("B%d", row), item.Amount, s.MoneyStyle)
 			setVal(f, sheet1, fmt.Sprintf("C%d", row), yesNo(item.Included, lang), s.DataStyle)
-			f.MergeCell(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row))
-			f.SetCellStyle(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("M%d", row), s.DataStyle)
+			f.MergeCell(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("N%d", row))
+			f.SetCellStyle(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("N%d", row), s.DataStyle)
 			row++
 		}
 		row++
@@ -367,8 +380,8 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 
 	// 6. 方案最终对比
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "方案最终对比", "Final Comparison"), s.SectionTitleStyle)
-	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("M%d", row), s.SectionTitleStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SectionTitleStyle)
 	row++
 
 	compHeaders := []string{
@@ -376,6 +389,7 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		tx(lang, "物流总费", "Logistics"),
 		tx(lang, "总成本", "Total Cost"),
 		tx(lang, "报价USD", "Quote USD"),
+		tx(lang, "报价EUR", "Quote EUR"),
 		tx(lang, "净利润", "Net Profit"),
 		tx(lang, "净利率", "Margin"),
 	}
@@ -383,8 +397,8 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		col := string(rune('A' + i))
 		setVal(f, sheet1, fmt.Sprintf("%s%d", col, row), h, s.HeaderStyle)
 	}
-	f.MergeCell(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row))
-	f.SetCellStyle(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row), s.HeaderStyle)
+	f.MergeCell(sheet1, fmt.Sprintf("G%d", row), fmt.Sprintf("N%d", row))
+	f.SetCellStyle(sheet1, fmt.Sprintf("G%d", row), fmt.Sprintf("N%d", row), s.HeaderStyle)
 	row++
 
 	for _, summ := range summaries {
@@ -399,10 +413,11 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		setMoney(f, sheet1, fmt.Sprintf("B%d", row), summ.Freight, mst)
 		setMoney(f, sheet1, fmt.Sprintf("C%d", row), summ.TotalCost, mst)
 		setMoney(f, sheet1, fmt.Sprintf("D%d", row), summ.QuoteUsd, mst)
-		setMoney(f, sheet1, fmt.Sprintf("E%d", row), summ.Profit, mst)
-		setVal(f, sheet1, fmt.Sprintf("F%d", row), fmtPct(summ.Margin), st)
-		f.MergeCell(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("F%d", row), fmt.Sprintf("M%d", row), st)
+		setMoney(f, sheet1, fmt.Sprintf("E%d", row), summ.QuoteEur, mst)
+		setMoney(f, sheet1, fmt.Sprintf("F%d", row), summ.Profit, mst)
+		setVal(f, sheet1, fmt.Sprintf("G%d", row), fmtPct(summ.Margin), st)
+		f.MergeCell(sheet1, fmt.Sprintf("G%d", row), fmt.Sprintf("N%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("G%d", row), fmt.Sprintf("N%d", row), st)
 		row++
 	}
 	row++
@@ -410,8 +425,8 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	if inputs.Notes != "" {
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "备注", "Notes"), s.BoldStyle)
 		setVal(f, sheet1, fmt.Sprintf("B%d", row), inputs.Notes, s.NoteStyle)
-		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("M%d", row), s.NoteStyle)
+		f.MergeCell(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("N%d", row))
+		f.SetCellStyle(sheet1, fmt.Sprintf("B%d", row), fmt.Sprintf("N%d", row), s.NoteStyle)
 		row++
 	}
 }
@@ -431,14 +446,14 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	_, summaries := CalculateSchemes(snap)
 	best := bestScheme(summaries)
 	qty := totalCargoQty(snap.Cargo)
-	unitUsd := quoteUnitUsd(best.QuoteUsd, qty)
+	unitQuote := quoteUnitUsd(quoteValue(best, inputs.OutputCurrency), qty)
 
 	sheet := safeSheetName(tx(lang, "客户报价单", "Quotation"))
 
 	f.SetSheetName("Sheet1", sheet)
 
 	f.SetColWidth(sheet, "A", "A", 28)
-	f.SetColWidth(sheet, "B", "B", 12)
+	f.SetColWidth(sheet, "B", "B", 15)
 	f.SetColWidth(sheet, "C", "C", 12)
 	f.SetColWidth(sheet, "D", "D", 12)
 	f.SetColWidth(sheet, "E", "E", 12)
@@ -446,15 +461,16 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	f.SetColWidth(sheet, "G", "G", 12)
 	f.SetColWidth(sheet, "H", "H", 14)
 	f.SetColWidth(sheet, "I", "I", 14)
+	f.SetColWidth(sheet, "J", "J", 14)
 
 	row := 1
 	title := inputs.ProjectName + " " + tx(lang, "报价单", "Quotation")
 	setVal(f, sheet, fmt.Sprintf("A%d", row), title, s.CustomerTitleStyle)
-	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("I%d", row))
+	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("J%d", row))
 	row++
 
 	setVal(f, sheet, fmt.Sprintf("A%d", row), tx(lang, "报价信息", "Quotation Info"), s.SectionTitleStyle)
-	for i := 1; i <= 8; i++ {
+	for i := 1; i <= 9; i++ {
 		col := string(rune('A' + i))
 		setVal(f, sheet, fmt.Sprintf("%s%d", col, row), "", s.SectionTitleStyle)
 	}
@@ -468,7 +484,7 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		{tx(lang, "贸易术语", "Trade Term"), fmt.Sprintf("%s %s", inputs.TradeTerm, inputs.Destination)},
 		{tx(lang, "柜型", "Container"), inputs.ContainerType},
 		{tx(lang, "报价有效期", "Valid Until"), inputs.ValidUntil},
-		{tx(lang, "报价金额", "Quotation Amount"), fmt.Sprintf("USD %s", fmtMoney(best.QuoteUsd))},
+		{tx(lang, "报价金额", "Quotation Amount"), formatCurrency(quoteValue(best, inputs.OutputCurrency), inputs.OutputCurrency)},
 	}
 	for _, item := range quoteInfo {
 		if item.value == "" {
@@ -478,13 +494,13 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		setVal(f, sheet, fmt.Sprintf("A%d", row), item.label, s.CustomerLabelStyle)
 		setVal(f, sheet, fmt.Sprintf("B%d", row), "", s.CustomerValueStyle)
 		setVal(f, sheet, fmt.Sprintf("C%d", row), item.value, s.CustomerValueStyle)
-		f.MergeCell(sheet, fmt.Sprintf("C%d", row), fmt.Sprintf("I%d", row))
+		f.MergeCell(sheet, fmt.Sprintf("C%d", row), fmt.Sprintf("J%d", row))
 		row++
 	}
 	row++
 
 	setVal(f, sheet, fmt.Sprintf("A%d", row), tx(lang, "货物清单", "Cargo List"), s.SectionTitleStyle)
-	for i := 1; i <= 8; i++ {
+	for i := 1; i <= 9; i++ {
 		col := string(rune('A' + i))
 		setVal(f, sheet, fmt.Sprintf("%s%d", col, row), "", s.SectionTitleStyle)
 	}
@@ -492,14 +508,15 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 
 	headers := []string{
 		tx(lang, "货物名称", "Cargo"),
+		tx(lang, "图片", "Image"),
 		tx(lang, "规格", "Spec"),
-		tx(lang, "长(m)", "Length"),
-		tx(lang, "高(m)", "Height"),
-		tx(lang, "宽(m)", "Width"),
+		tx(lang, "长(cm)", "Length(cm)"),
+		tx(lang, "高(cm)", "Height(cm)"),
+		tx(lang, "宽(cm)", "Width(cm)"),
 		tx(lang, "单箱KG", "KG/Unit"),
 		tx(lang, "数量", "Qty"),
-		tx(lang, "均单价USD", "Unit Price"),
-		tx(lang, "金额USD", "Amount"),
+		fmt.Sprintf("%s %s", tx(lang, "均单价", "Unit Price"), inputs.OutputCurrency),
+		fmt.Sprintf("%s %s", tx(lang, "金额", "Amount"), inputs.OutputCurrency),
 	}
 	for i, h := range headers {
 		col := string(rune('A' + i))
@@ -515,30 +532,33 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 			dataSt = s.AltDataStyle
 			moneySt = s.AltMoneyStyle
 		}
+		f.SetRowHeight(sheet, row, 58)
 		setVal(f, sheet, fmt.Sprintf("A%d", row), cr.Name, dataSt)
-		setVal(f, sheet, fmt.Sprintf("B%d", row), cr.Spec, dataSt)
-		setVal(f, sheet, fmt.Sprintf("C%d", row), cr.Length, moneySt)
-		setVal(f, sheet, fmt.Sprintf("D%d", row), cr.Height, moneySt)
-		setVal(f, sheet, fmt.Sprintf("E%d", row), cr.Width, moneySt)
-		setMoney(f, sheet, fmt.Sprintf("F%d", row), cr.Weight, moneySt)
-		setMoney(f, sheet, fmt.Sprintf("G%d", row), cr.Qty, moneySt)
-		setMoney(f, sheet, fmt.Sprintf("H%d", row), unitUsd, moneySt)
-		setMoney(f, sheet, fmt.Sprintf("I%d", row), quoteLineUsd(cr, unitUsd), moneySt)
+		setVal(f, sheet, fmt.Sprintf("B%d", row), imageCellText(cr), dataSt)
+		addCargoPicture(f, sheet, fmt.Sprintf("B%d", row), cr)
+		setVal(f, sheet, fmt.Sprintf("C%d", row), cr.Spec, dataSt)
+		setVal(f, sheet, fmt.Sprintf("D%d", row), cr.Length, moneySt)
+		setVal(f, sheet, fmt.Sprintf("E%d", row), cr.Height, moneySt)
+		setVal(f, sheet, fmt.Sprintf("F%d", row), cr.Width, moneySt)
+		setMoney(f, sheet, fmt.Sprintf("G%d", row), cr.Weight, moneySt)
+		setMoney(f, sheet, fmt.Sprintf("H%d", row), cr.Qty, moneySt)
+		setMoney(f, sheet, fmt.Sprintf("I%d", row), unitQuote, moneySt)
+		setMoney(f, sheet, fmt.Sprintf("J%d", row), quoteLineUsd(cr, unitQuote), moneySt)
 		row++
 	}
 
 	setVal(f, sheet, fmt.Sprintf("A%d", row), tx(lang, "合计", "Total"), s.TotalStyle)
-	for i := 1; i <= 7; i++ {
+	for i := 1; i <= 8; i++ {
 		col := string(rune('A' + i))
 		setVal(f, sheet, fmt.Sprintf("%s%d", col, row), "", s.TotalStyle)
 	}
-	setVal(f, sheet, fmt.Sprintf("H%d", row), unitUsd, s.TotalMoneyStyle)
-	setVal(f, sheet, fmt.Sprintf("I%d", row), best.QuoteUsd, s.TotalMoneyStyle)
+	setVal(f, sheet, fmt.Sprintf("I%d", row), unitQuote, s.TotalMoneyStyle)
+	setVal(f, sheet, fmt.Sprintf("J%d", row), quoteValue(best, inputs.OutputCurrency), s.TotalMoneyStyle)
 	row++
 	row++
 
 	setVal(f, sheet, fmt.Sprintf("A%d", row), tx(lang, "费用说明", "Cost Scope"), s.SectionTitleStyle)
-	for i := 1; i <= 8; i++ {
+	for i := 1; i <= 9; i++ {
 		col := string(rune('A' + i))
 		setVal(f, sheet, fmt.Sprintf("%s%d", col, row), "", s.SectionTitleStyle)
 	}
@@ -548,18 +568,103 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	exclusionText := getExclusionText(lang)
 
 	setVal(f, sheet, fmt.Sprintf("A%d", row), "• "+termText, s.NoteStyle)
-	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("I%d", row))
+	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("J%d", row))
 	row++
 
 	setVal(f, sheet, fmt.Sprintf("A%d", row), "• "+exclusionText, s.NoteStyle)
-	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("I%d", row))
+	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("J%d", row))
 	row++
 
 	if inputs.Notes != "" && inputs.Notes != defaultExclusion && inputs.Notes != defaultExclusion2 {
 		setVal(f, sheet, fmt.Sprintf("A%d", row), "• "+inputs.Notes, s.NoteStyle)
-		f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("I%d", row))
+		f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("J%d", row))
 		row++
 	}
+}
+
+func quoteValue(row SummaryRow, currency string) float64 {
+	switch strings.ToUpper(strings.TrimSpace(currency)) {
+	case "RMB", "CNY":
+		return row.QuoteRmb
+	case "EUR":
+		return row.QuoteEur
+	default:
+		return row.QuoteUsd
+	}
+}
+
+func currencyName(currency, lang string) string {
+	switch strings.ToUpper(strings.TrimSpace(currency)) {
+	case "RMB", "CNY":
+		return tx(lang, "人民币 RMB", "RMB")
+	case "EUR":
+		return tx(lang, "欧元 EUR", "EUR")
+	default:
+		return tx(lang, "美元 USD", "USD")
+	}
+}
+
+func formatCurrency(value float64, currency string) string {
+	code := strings.ToUpper(strings.TrimSpace(currency))
+	if code == "" {
+		code = "USD"
+	}
+	if code == "CNY" {
+		code = "RMB"
+	}
+	return fmt.Sprintf("%s %s", code, fmtMoney(value))
+}
+
+func imageCellText(cr CargoRow) string {
+	if strings.TrimSpace(cr.ImageData) != "" {
+		return ""
+	}
+	return cr.ImageName
+}
+
+func addCargoPicture(f *excelize.File, sheet, cell string, cr CargoRow) {
+	ext, payload, ok := splitImageData(cr.ImageData)
+	if !ok {
+		return
+	}
+	file, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return
+	}
+	_ = f.AddPictureFromBytes(sheet, cell, &excelize.Picture{
+		Extension: ext,
+		File:      file,
+		Format: &excelize.GraphicOptions{
+			AltText:         cr.ImageName,
+			LockAspectRatio: true,
+			AutoFit:         true,
+			OffsetX:         4,
+			OffsetY:         4,
+		},
+	})
+}
+
+func splitImageData(data string) (string, string, bool) {
+	if data == "" {
+		return "", "", false
+	}
+	parts := strings.SplitN(data, ",", 2)
+	if len(parts) != 2 || !strings.Contains(parts[0], ";base64") {
+		return "", "", false
+	}
+	ext := ".jpg"
+	header := strings.ToLower(parts[0])
+	switch {
+	case strings.Contains(header, "image/png"):
+		ext = ".png"
+	case strings.Contains(header, "image/gif"):
+		ext = ".gif"
+	case strings.Contains(header, "image/webp"):
+		ext = ".webp"
+	case strings.Contains(header, "image/jpeg"), strings.Contains(header, "image/jpg"):
+		ext = ".jpg"
+	}
+	return ext, parts[1], true
 }
 
 func safeSheetName(name string) string {

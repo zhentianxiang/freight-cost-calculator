@@ -22,6 +22,10 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 		if snap.Inputs.ExchangeRate > 0 {
 			quoteUsd = quoteRmb / snap.Inputs.ExchangeRate
 		}
+		quoteEur := 0.0
+		if snap.Inputs.EurExchangeRate > 0 {
+			quoteEur = quoteRmb / snap.Inputs.EurExchangeRate
+		}
 
 		targetPrice := quoteRmb
 		profit := quoteRmb - totalCost
@@ -36,6 +40,7 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 			TotalCost:   totalCost,
 			TargetPrice: targetPrice,
 			QuoteUsd:    quoteUsd,
+			QuoteEur:    quoteEur,
 			QuoteRmb:    quoteRmb,
 			Profit:      profit,
 			Margin:      margin,
@@ -90,6 +95,12 @@ func FixDefaults(snap *Snapshot) {
 	}
 	if snap.Inputs.TargetProfit == 0 {
 		snap.Inputs.TargetProfit = 15
+	}
+	if snap.Inputs.OutputCurrency == "" {
+		snap.Inputs.OutputCurrency = "USD"
+	}
+	if snap.Inputs.EurExchangeRate == 0 {
+		snap.Inputs.EurExchangeRate = 7.8
 	}
 	if len(snap.Schemes) == 0 {
 		for _, fr := range snap.Freight {

@@ -17,8 +17,8 @@
   },
   "schemes": ["A", "B"],
   "cargo": [
-    { "name": "大理石马", "spec": "实际出货尺寸", "length": 2.1, "height": 2.1, "width": 0.5, "weight": 2200, "qty": 5, "unitPrice": 20000, "taxRate": 13 },
-    { "name": "不锈钢猎鹰", "spec": "实际出货尺寸", "length": 3, "height": 2, "width": 0.8, "weight": 500, "qty": 1, "unitPrice": 40000, "taxRate": 0 }
+    { "name": "大理石马", "spec": "实际出货尺寸", "length": 210, "height": 210, "width": 50, "weight": 2200, "qty": 5, "unitPrice": 20000, "taxRate": 13 },
+    { "name": "不锈钢猎鹰", "spec": "实际出货尺寸", "length": 300, "height": 200, "width": 80, "weight": 500, "qty": 1, "unitPrice": 40000, "taxRate": 0 }
   ],
   "freight": [
     { "scheme": "A", "item": "船运费用", "amount": 20300, "included": true },

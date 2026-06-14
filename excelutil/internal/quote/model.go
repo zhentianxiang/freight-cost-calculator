@@ -1,16 +1,18 @@
 package quote
 
 type Inputs struct {
-	CompanyName    string  `json:"companyName"`
-	ProjectName    string  `json:"projectName"`
-	TradeTerm      string  `json:"tradeTerm"`
-	ContainerType  string  `json:"containerType"`
-	Destination    string  `json:"destination"`
-	ValidUntil     string  `json:"validUntil"`
-	ExchangeRate   float64 `json:"exchangeRate"`
-	TargetProfit   float64 `json:"targetProfit"`
-	SelectedScheme string  `json:"selectedScheme"`
-	Notes          string  `json:"notes"`
+	CompanyName     string  `json:"companyName"`
+	ProjectName     string  `json:"projectName"`
+	TradeTerm       string  `json:"tradeTerm"`
+	ContainerType   string  `json:"containerType"`
+	Destination     string  `json:"destination"`
+	ValidUntil      string  `json:"validUntil"`
+	ExchangeRate    float64 `json:"exchangeRate"`
+	EurExchangeRate float64 `json:"eurExchangeRate"`
+	OutputCurrency  string  `json:"outputCurrency"`
+	TargetProfit    float64 `json:"targetProfit"`
+	SelectedScheme  string  `json:"selectedScheme"`
+	Notes           string  `json:"notes"`
 }
 
 type CargoRow struct {
@@ -23,6 +25,8 @@ type CargoRow struct {
 	Qty       float64 `json:"qty"`
 	UnitPrice float64 `json:"unitPrice"`
 	TaxRate   float64 `json:"taxRate"`
+	ImageName string  `json:"imageName"`
+	ImageData string  `json:"imageData"`
 }
 
 type FreightRow struct {
@@ -48,6 +52,7 @@ type SummaryRow struct {
 	TotalCost   float64
 	TargetPrice float64
 	QuoteUsd    float64
+	QuoteEur    float64
 	QuoteRmb    float64
 	Profit      float64
 	Margin      float64
