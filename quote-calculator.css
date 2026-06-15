@@ -266,6 +266,55 @@ h1 {
   opacity: 0.72;
 }
 
+.currency-converter {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1.1fr);
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #c9d9e4;
+  border-radius: 8px;
+  background: #f7fbfd;
+}
+
+.converter-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 10px;
+  min-width: 0;
+}
+
+.converter-results {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.converter-result {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.converter-result span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.converter-result strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
 .import-scope {
   display: flex;
   align-items: center;
@@ -706,18 +755,28 @@ td select:focus {
 }
 
 #quotePage .summary-column .section:last-child {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  flex: 0 0 auto;
 }
 
 #quotePage .summary-column .section:last-child .section-body {
-  flex: 1;
-  display: flex;
+  display: grid;
+  gap: 12px;
 }
 
 #quotePage .summary-column .section:last-child textarea {
-  flex: 1;
+  min-height: 96px;
+  max-height: 140px;
+}
+
+#quotePage .summary-column .currency-converter {
+  grid-column: auto;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  margin-top: 0;
+}
+
+#quotePage .summary-column .converter-inputs {
+  grid-template-columns: minmax(0, 1fr) 132px;
 }
 
 .hidden {
@@ -852,6 +911,10 @@ td select:focus {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .currency-converter {
+    grid-template-columns: 1fr;
+  }
+
   .summary-column {
     position: static;
   }
@@ -871,6 +934,15 @@ td select:focus {
   .two-panel-form,
   .form-grid.compact-form,
   .pi-notes-body {
+    grid-template-columns: 1fr;
+  }
+
+  .currency-converter {
+    grid-column: 1 / -1;
+  }
+
+  .converter-inputs,
+  .converter-results {
     grid-template-columns: 1fr;
   }
 }

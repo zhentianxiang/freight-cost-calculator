@@ -144,6 +144,34 @@ function formatPrimaryQuote(value, currency) {
   return formatQuoteMoney(value, currency);
 }
 
+function formatConverterMoney(value, currency) {
+  if (!Number.isFinite(value)) return "--";
+  if (currency === "RMB") return `¥${fmt.format(Math.round(value * 100) / 100)}`;
+  if (currency === "EUR") return `€${fmt.format(Math.round(value * 100) / 100)}`;
+  return `$${fmt.format(Math.round(value * 100) / 100)}`;
+}
+
+function renderCurrencyConverter() {
+  const amountInput = $("converterAmount");
+  const currencySelect = $("converterCurrency");
+  if (!amountInput || !currencySelect) return;
+
+  const amount = cleanNum(amountInput.value);
+  const currency = currencySelect.value || "USD";
+  const usdRate = cleanNum($("exchangeRate").value);
+  const eurRate = cleanNum($("eurExchangeRate").value);
+  let rmbValue = amount;
+
+  if (currency === "USD") rmbValue = usdRate > 0 ? amount * usdRate : NaN;
+  if (currency === "EUR") rmbValue = eurRate > 0 ? amount * eurRate : NaN;
+
+  const usdValue = usdRate > 0 ? rmbValue / usdRate : NaN;
+  const eurValue = eurRate > 0 ? rmbValue / eurRate : NaN;
+  $("converterRmb").textContent = formatConverterMoney(rmbValue, "RMB");
+  $("converterUsd").textContent = formatConverterMoney(usdValue, "USD");
+  $("converterEur").textContent = formatConverterMoney(eurValue, "EUR");
+}
+
 function goodsCostMetaText() {
   const cargoCount = state.cargo.length;
   const qty = totalCargoQty();
@@ -556,12 +584,17 @@ function syncAndRender() {
   renderCargo();
   renderFreight();
   renderSchemeOptions();
+  renderCurrencyConverter();
   renderSummary();
 }
 
 function updateStateOnInput(event) {
   const target = event.target;
   if (target.closest("#piPage")) return;
+  if (target.closest("#currencyConverter")) {
+    renderCurrencyConverter();
+    return;
+  }
   
   let changed = false;
   
@@ -587,6 +620,7 @@ function updateStateOnInput(event) {
   }
 
   if (changed) {
+    renderCurrencyConverter();
     renderSummary();
     scheduleAutoSave();
   }
@@ -595,6 +629,10 @@ function updateStateOnInput(event) {
 function updateStateOnChange(event) {
   const target = event.target;
   if (target.closest("#piPage")) return;
+  if (target.closest("#currencyConverter")) {
+    renderCurrencyConverter();
+    return;
+  }
   
   let changed = false;
   
@@ -616,6 +654,7 @@ function updateStateOnChange(event) {
   }
 
   if (changed) {
+    renderCurrencyConverter();
     renderSummary();
     scheduleAutoSave();
   }
@@ -818,6 +857,7 @@ async function fetchUsdCnyRate() {
     if (eurPerUsd > 0) $("eurExchangeRate").value = Number(rate / eurPerUsd).toFixed(1);
     const updated = data.time_last_update_utc ? `，更新时间：${data.time_last_update_utc}` : "";
     source.innerHTML = `已获取USD/CNY ${Number(rate).toFixed(1)}，EUR/CNY ${Number($("eurExchangeRate").value).toFixed(1)}${updated}。Rates by <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Exchange Rate API</a>。`;
+    renderCurrencyConverter();
     renderSummary();
   } catch (error) {
     source.textContent = "汇率获取失败，请继续手动填写；公开接口可能受网络、跨域或限流影响。";
@@ -1434,7 +1474,7 @@ $("fetchRateBtn").addEventListener("click", fetchUsdCnyRate);
 $("policyLookupBtn").addEventListener("click", openPolicyLookup);
 $("clearBtn").addEventListener("click", clearAllData);
 $("mdBtn").addEventListener("click", () => openExportDialog("md"));
- $("excelBtn").addEventListener("click", () => openExportDialog("excel"));
+$("excelBtn").addEventListener("click", () => openExportDialog("excel"));
 $("saveSchemeBtn").addEventListener("click", saveSchemeName);
 $("cancelSchemeBtn").addEventListener("click", cancelSchemeName);
 $("schemePromptDialog").addEventListener("click", (event) => {

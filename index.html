@@ -335,6 +335,27 @@
           </div>
           <div class="section-body">
             <textarea id="notes">目的港清关、关税、目的港杂费、目的地派送等费用默认不包含在CFR报价内。</textarea>
+            <div class="currency-converter" id="currencyConverter">
+              <div class="converter-inputs">
+                <div class="field">
+                  <label for="converterAmount">汇率换算</label>
+                  <input id="converterAmount" class="num" type="number" step="0.01" value="1000">
+                </div>
+                <div class="field">
+                  <label for="converterCurrency">原币种</label>
+                  <select id="converterCurrency">
+                    <option value="RMB">人民币 RMB</option>
+                    <option value="USD" selected>美元 USD</option>
+                    <option value="EUR">欧元 EUR</option>
+                  </select>
+                </div>
+              </div>
+              <div class="converter-results" id="converterResults" aria-live="polite">
+                <div class="converter-result"><span>RMB</span><strong id="converterRmb">¥0.00</strong></div>
+                <div class="converter-result"><span>USD</span><strong id="converterUsd">$0.00</strong></div>
+                <div class="converter-result"><span>EUR</span><strong id="converterEur">€0.00</strong></div>
+              </div>
+            </div>
           </div>
         </section>
       </aside>
