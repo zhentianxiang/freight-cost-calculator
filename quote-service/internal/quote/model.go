@@ -54,27 +54,36 @@ type Snapshot struct {
 }
 
 type SummaryRow struct {
-	Scheme      string
-	Freight     float64
-	ImportCosts ImportCosts
-	TotalCost   float64
-	TargetPrice float64
-	QuoteUsd    float64
-	QuoteEur    float64
-	QuoteRmb    float64
-	Profit      float64
-	Margin      float64
+	Scheme        string      `json:"scheme"`
+	Freight       float64     `json:"freight"`
+	ImportCosts   ImportCosts `json:"importCosts"`
+	TotalCost     float64     `json:"totalCost"`
+	TargetPrice   float64     `json:"targetPrice"`
+	QuoteUsd      float64     `json:"quoteUsd"`
+	QuoteEur      float64     `json:"quoteEur"`
+	QuoteRmb      float64     `json:"quoteRmb"`
+	Profit        float64     `json:"profit"`
+	Margin        float64     `json:"margin"`
+	Markup        float64     `json:"markup"`
+	HasQuotedCost bool        `json:"hasQuotedCost"`
 }
 
 type ImportCosts struct {
-	CustomsValue     float64
-	Duty             float64
-	ImportTax        float64
-	DestinationLocal float64
-	Clearance        float64
-	IncludedTotal    float64
-	IncludeDelivery  bool
-	IncludeImport    bool
+	CustomsValue     float64 `json:"customsValue"`
+	Duty             float64 `json:"duty"`
+	ImportTax        float64 `json:"importTax"`
+	DestinationLocal float64 `json:"destinationLocal"`
+	Clearance        float64 `json:"clearance"`
+	IncludedTotal    float64 `json:"includedTotal"`
+	IncludeDelivery  bool    `json:"includeDelivery"`
+	IncludeImport    bool    `json:"includeImport"`
+}
+
+type CalculationResult struct {
+	Inputs    Inputs       `json:"inputs"`
+	GoodsCost float64      `json:"goodsCost"`
+	Schemes   []SummaryRow `json:"schemes"`
+	Selected  SummaryRow   `json:"selected"`
 }
 
 type Styles struct {

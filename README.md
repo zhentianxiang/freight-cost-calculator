@@ -28,15 +28,15 @@
 
 ## 目录结构
 
-- `excelutil/cmd/server/`: Go 后端服务入口
-- `excelutil/cmd/export/`: 命令行 Excel 导出入口
-- `excelutil/internal/httpapi/`: HTTP 路由与接口处理
-- `excelutil/internal/quote/`: 报价数据模型、计算逻辑与 Excel 生成
-- `excelutil/internal/archive/`: 报价归档文件存储
-- `excelutil/internal/runner/`: 命令行任务封装
-- `excelutil/Dockerfile`: Go 后端镜像构建
+- `quote-service/cmd/server/`: Go 后端服务入口
+- `quote-service/cmd/export/`: 命令行 Excel 导出入口
+- `quote-service/internal/httpapi/`: HTTP 路由与接口处理
+- `quote-service/internal/quote/`: 报价数据模型、计算逻辑与 Excel 生成
+- `quote-service/internal/archive/`: 报价归档文件存储
+- `quote-service/internal/runner/`: 命令行任务封装
+- `quote-service/Dockerfile`: Go 后端镜像构建
 - `nginx/`: Nginx 配置文件及 Dockerfile
 - `index.html`: 前端主页面
-- `quote-calculator.js`: 前端逻辑
+- `quote-app.js`: 前端页面控制、接口调用与 PI 交互
 - `quote-calculator.css`: 前端样式
 - `docker-compose.yml`: 服务编排配置

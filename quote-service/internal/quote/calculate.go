@@ -1,5 +1,19 @@
 package quote
 
+import "strings"
+
+func Calculate(snap *Snapshot) CalculationResult {
+	FixDefaults(snap)
+	goodsCost, schemes := CalculateSchemes(snap)
+	selected := bestScheme(schemes)
+	return CalculationResult{
+		Inputs:    snap.Inputs,
+		GoodsCost: goodsCost,
+		Schemes:   schemes,
+		Selected:  selected,
+	}
+}
+
 func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 	goodsCost := 0.0
 	for _, c := range snap.Cargo {
@@ -7,18 +21,29 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 	}
 
 	var summaries []SummaryRow
-	for _, s := range snap.Schemes {
+	for _, s := range summarySchemeIDs(snap) {
 		freight := 0.0
+		hasQuotedCost := false
 		for _, f := range snap.Freight {
 			if f.Scheme == s && f.Included {
 				freight += f.Amount
+				if f.Amount > 0 {
+					hasQuotedCost = true
+				}
 			}
 		}
 		importCosts := estimateImportCosts(snap.Inputs, goodsCost, freight)
 		totalCost := goodsCost + freight + importCosts.IncludedTotal
 
 		// 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
-		quoteRmb := totalCost / (1 - snap.Inputs.TargetProfit/100)
+		profitRate := snap.Inputs.TargetProfit
+		divisor := 1 - profitRate/100
+		quoteRmb := 0.0
+		if divisor > 0.01 {
+			quoteRmb = totalCost / divisor
+		} else {
+			quoteRmb = totalCost * (1 + profitRate/100)
+		}
 		quoteUsd := 0.0
 		if snap.Inputs.ExchangeRate > 0 {
 			quoteUsd = quoteRmb / snap.Inputs.ExchangeRate
@@ -34,18 +59,24 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 		if quoteRmb > 0 {
 			margin = (profit / quoteRmb) * 100
 		}
+		markup := 0.0
+		if totalCost > 0 {
+			markup = (profit / totalCost) * 100
+		}
 
 		summaries = append(summaries, SummaryRow{
-			Scheme:      s,
-			Freight:     freight,
-			ImportCosts: importCosts,
-			TotalCost:   totalCost,
-			TargetPrice: targetPrice,
-			QuoteUsd:    quoteUsd,
-			QuoteEur:    quoteEur,
-			QuoteRmb:    quoteRmb,
-			Profit:      profit,
-			Margin:      margin,
+			Scheme:        s,
+			Freight:       freight,
+			ImportCosts:   importCosts,
+			TotalCost:     totalCost,
+			TargetPrice:   targetPrice,
+			QuoteUsd:      quoteUsd,
+			QuoteEur:      quoteEur,
+			QuoteRmb:      quoteRmb,
+			Profit:        profit,
+			Margin:        margin,
+			Markup:        markup,
+			HasQuotedCost: hasQuotedCost,
 		})
 	}
 	return goodsCost, summaries
@@ -82,13 +113,59 @@ func bestScheme(summaries []SummaryRow) SummaryRow {
 	if len(summaries) == 0 {
 		return SummaryRow{}
 	}
-	best := summaries[0]
+	candidates := summaries
+	var eligible []SummaryRow
 	for _, s := range summaries {
+		if s.HasQuotedCost {
+			eligible = append(eligible, s)
+		}
+	}
+	if len(eligible) > 0 {
+		candidates = eligible
+	}
+	best := candidates[0]
+	for _, s := range candidates {
 		if s.TotalCost < best.TotalCost {
+			best = s
+			continue
+		}
+		if s.TotalCost == best.TotalCost && s.Profit > best.Profit {
 			best = s
 		}
 	}
 	return best
+}
+
+func summarySchemeIDs(snap *Snapshot) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, row := range snap.Freight {
+		if !isMeaningfulFreightRow(row) || strings.TrimSpace(row.Scheme) == "" {
+			continue
+		}
+		if !seen[row.Scheme] {
+			seen[row.Scheme] = true
+			out = append(out, row.Scheme)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, scheme := range snap.Schemes {
+		if strings.TrimSpace(scheme) == "" || seen[scheme] {
+			continue
+		}
+		seen[scheme] = true
+		out = append(out, scheme)
+	}
+	if len(out) > 0 {
+		return []string{out[0]}
+	}
+	return []string{"A"}
+}
+
+func isMeaningfulFreightRow(row FreightRow) bool {
+	return strings.TrimSpace(row.Item) != "" || row.Amount > 0
 }
 
 func totalCargoQty(cargo []CargoRow) float64 {

@@ -1,10 +1,15 @@
 package quote
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
-	defaultExclusion  = "不包含目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用。"
-	defaultExclusion2 = "Destination customs clearance, duties/taxes, destination port charges, storage, inspection, destination delivery, and other buyer-side local charges are excluded."
+	defaultExclusion     = "不包含目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用。"
+	defaultExclusion2    = "Destination customs clearance, duties/taxes, destination port charges, storage, inspection, destination delivery, and other buyer-side local charges are excluded."
+	legacyCFRExclusion   = "目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用默认不包含在CFR报价内。"
+	legacyCFRExclusionEn = "Destination customs clearance, duties/taxes, destination port charges, storage, inspection, destination delivery, and other buyer-side local charges are not included in CFR quotation by default."
 )
 
 func getCustomerTermText(term, destination, lang string) string {
@@ -59,6 +64,14 @@ func getExclusionText(term, lang string) string {
 			"不包含海运保险、目的港杂费、进口清关、关税税费、仓储查验、目的地派送及其他买方当地费用。",
 			"Marine insurance, destination port charges, import clearance, duties/taxes, storage, inspection, destination delivery, and other buyer-side local charges are excluded.")
 	}
+}
+
+func isDefaultExclusionNote(note string) bool {
+	note = strings.TrimSpace(note)
+	return note == defaultExclusion ||
+		note == defaultExclusion2 ||
+		note == legacyCFRExclusion ||
+		note == legacyCFRExclusionEn
 }
 
 func tx(lang, zh, en string) string {

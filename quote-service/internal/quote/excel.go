@@ -579,7 +579,7 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("J%d", row))
 	row++
 
-	if inputs.Notes != "" && inputs.Notes != defaultExclusion && inputs.Notes != defaultExclusion2 {
+	if inputs.Notes != "" && !isDefaultExclusionNote(inputs.Notes) {
 		setVal(f, sheet, fmt.Sprintf("A%d", row), "• "+inputs.Notes, s.NoteStyle)
 		f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("J%d", row))
 		row++

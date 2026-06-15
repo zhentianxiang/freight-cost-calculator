@@ -1,13 +1,12 @@
 name: quotation
 
 services:
-  go-backend:
+  quote-service:
     build:
-      context: ./excelutil
+      context: ./quote-service
       dockerfile: Dockerfile
-    container_name: excelutil-api
     volumes:
-      - ./excelutil/data:/app/data
+      - ./quote-service/data:/app/data
     expose:
       - "8081"
     networks:
@@ -18,11 +17,10 @@ services:
     build:
       context: .
       dockerfile: nginx/Dockerfile
-    container_name: excelutil-nginx
     ports:
       - "8888:80"
     depends_on:
-      - go-backend
+      - quote-service
     networks:
       - app-network
     restart: unless-stopped

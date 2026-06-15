@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"excelutil/internal/quote"
+	"quote-service/internal/quote"
 
 	"github.com/xuri/excelize/v2"
 )

@@ -1,4 +1,5 @@
 .DS_Store
-excelutil/data/
-excelutil/excelutil
+quote-service/data/
+quote-service/quote-service
+quote-service/server
 *.log

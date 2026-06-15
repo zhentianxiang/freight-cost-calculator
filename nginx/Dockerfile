@@ -5,7 +5,7 @@ COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 
 # 复制前端静态文件
 COPY index.html /usr/share/nginx/html/
-COPY quote-calculator.js /usr/share/nginx/html/
+COPY quote-app.js /usr/share/nginx/html/
 COPY quote-calculator.css /usr/share/nginx/html/
 
 # Hardening: 删除默认站点

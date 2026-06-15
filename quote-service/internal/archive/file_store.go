@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"excelutil/internal/quote"
+	"quote-service/internal/quote"
 )
 
 type FileStore struct {

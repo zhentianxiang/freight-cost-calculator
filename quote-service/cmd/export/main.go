@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 
-	"excelutil/internal/runner"
+	"quote-service/internal/runner"
 )
 
 func main() {

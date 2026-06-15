@@ -49,6 +49,8 @@ let pendingDownloadType = "";
 let autosaveTimer = 0;
 let lastSavedSignature = "";
 let toastTimer = 0;
+let calculationRequestId = 0;
+let latestCalculationResult = null;
 
 const piDefaultTerms = `1. This PI becomes binding after buyer's written acceptance and seller's receipt of agreed deposit or full payment.
 2. Production and shipment schedules are counted from the date cleared funds are received in seller's bank account.
@@ -93,29 +95,6 @@ function totalCargoQty() {
   return state.cargo.reduce((sum, row) => sum + cleanNum(row.qty), 0);
 }
 
-function quoteUnitUsd() {
-  const result = calculate();
-  const selected = getBestScheme(result.schemes) || result.schemes[0];
-  const qty = totalCargoQty();
-  return qty ? selected.quoteUsd / qty : 0;
-}
-
-function quoteUnitByCurrency(currency) {
-  const result = calculate();
-  const selected = getBestScheme(result.schemes) || result.schemes[0];
-  const qty = totalCargoQty();
-  if (!qty || !selected) return 0;
-  return quoteValueByCurrency(selected, currency) / qty;
-}
-
-function quoteLineUsd(row) {
-  return quoteUnitUsd() * cleanNum(row.qty);
-}
-
-function quoteLineByCurrency(row, currency) {
-  return quoteUnitByCurrency(currency) * cleanNum(row.qty);
-}
-
 function quoteValueByCurrency(row, currency) {
   if (!row) return 0;
   if (currency === "RMB") return row.quoteRmb || 0;
@@ -123,26 +102,36 @@ function quoteValueByCurrency(row, currency) {
   return row.quoteUsd || 0;
 }
 
-function customerCargoUnitByCurrency(row, selected, goodsCost) {
+async function calculateOnServer() {
+  const snapshot = normalizeSnapshotForServer(getSnapshot("服务器计算"));
+  const resp = await fetch("/api/quote/calculate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(snapshot)
+  });
+  if (!resp.ok) {
+    const message = await resp.text();
+    throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
+  }
+  return resp.json();
+}
+
+async function ensureCalculationResult() {
+  if (latestCalculationResult) return latestCalculationResult;
+  latestCalculationResult = await calculateOnServer();
+  return latestCalculationResult;
+}
+
+function customerCargoUnitByCurrency(row, selected, goodsCost, currency) {
   const qty = cleanNum(row.qty);
   if (!qty || !selected || !goodsCost) return 0;
-  return customerCargoLineByCurrency(row, selected, goodsCost) / qty;
+  return customerCargoLineByCurrency(row, selected, goodsCost, currency) / qty;
 }
 
-function customerCargoLineByCurrency(row, selected, goodsCost) {
+function customerCargoLineByCurrency(row, selected, goodsCost, currency) {
   if (!selected || !goodsCost) return 0;
   const ratio = cargoTotal(row) / goodsCost;
-  return quoteValueByCurrency(selected, selected.outputCurrency) * ratio;
-}
-
-function customerQuoteContext() {
-  const { inputs, goodsCost, schemes } = calculate();
-  const selected = getBestScheme(schemes) || schemes[0];
-  return {
-    inputs,
-    goodsCost,
-    selected: selected ? { ...selected, outputCurrency: inputs.outputCurrency } : null
-  };
+  return quoteValueByCurrency(selected, currency) * ratio;
 }
 
 function formatQuoteMoney(value, currency) {
@@ -366,60 +355,6 @@ function getNextSchemeId() {
   return `方案${index}`;
 }
 
-function calculate() {
-  const inputs = getInputs();
-  const goodsCost = state.cargo.reduce((sum, row) => sum + cargoTotal(row), 0);
-  const schemes = getSummarySchemeIds().map((scheme) => {
-    const rows = state.freight.filter((row) => row.scheme === scheme);
-    const freight = state.freight
-      .filter((row) => row.scheme === scheme && row.included)
-      .reduce((sum, row) => sum + cleanNum(row.amount), 0);
-    const importCosts = estimateImportCosts(inputs, goodsCost, freight);
-    const totalCost = goodsCost + freight + importCosts.includedTotal;
-    
-    // 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
-    const profitRate = cleanNum(inputs.targetProfit);
-    const divisor = 1 - profitRate / 100;
-    // 保护：防止除以0或利润率过高导致报价异常，若利润率>=100则采用成本加成方式兜底
-    const quoteRmb = divisor > 0.01 ? totalCost / divisor : totalCost * (1 + profitRate / 100);
-    
-    const quoteUsd = inputs.exchangeRate > 0 ? quoteRmb / inputs.exchangeRate : 0;
-    const quoteEur = inputs.eurExchangeRate > 0 ? quoteRmb / inputs.eurExchangeRate : 0;
-    
-    const targetPrice = quoteRmb;
-    const profit = quoteRmb - totalCost;
-    const margin = quoteRmb > 0 ? (profit / quoteRmb) * 100 : 0;
-    const markup = totalCost > 0 ? (profit / totalCost) * 100 : 0;
-    const hasQuotedCost = rows.some((row) => row.included && cleanNum(row.amount) > 0);
-    return { scheme, freight, totalCost, targetPrice, quoteRmb, quoteUsd, quoteEur, profit, margin, markup, hasQuotedCost, importCosts };
-  });
-  return { inputs, goodsCost, schemes };
-}
-
-function estimateImportCosts(inputs, goodsCost, freight) {
-  const customsValue = goodsCost + freight;
-  const duty = customsValue * cleanNum(inputs.dutyRate) / 100;
-  const importTax = (customsValue + duty) * cleanNum(inputs.importVatRate) / 100;
-  const destinationLocal = cleanNum(inputs.destinationDelivery) + cleanNum(inputs.destinationOther);
-  const clearance = cleanNum(inputs.destinationClearance);
-  const term = inputs.tradeTerm;
-  const includeDelivery = term === "DAP" || term === "DDP";
-  const includeImport = term === "DDP";
-  const includedTotal = (includeDelivery ? destinationLocal : 0) + (includeImport ? clearance + duty + importTax : 0);
-  return { customsValue, duty, importTax, destinationLocal, clearance, includedTotal, includeDelivery, includeImport };
-}
-
-function getBestScheme(schemes) {
-  const eligible = schemes.filter((row) => row.hasQuotedCost);
-  const candidates = eligible.length ? eligible : schemes;
-  return candidates.reduce((best, row) => {
-    if (!best) return row;
-    if (row.totalCost < best.totalCost) return row;
-    if (row.totalCost === best.totalCost && row.profit > best.profit) return row;
-    return best;
-  }, null);
-}
-
 function renderCargo() {
   const tbody = $("cargoTable").querySelector("tbody");
   tbody.innerHTML = "";
@@ -523,11 +458,22 @@ function renderFreight() {
   });
 }
 
-function renderSummary() {
-  const result = calculate();
+async function renderSummary() {
+  const requestId = ++calculationRequestId;
+  latestCalculationResult = null;
+  let result;
+  try {
+    result = await calculateOnServer();
+    if (requestId !== calculationRequestId) return;
+    latestCalculationResult = result;
+  } catch (error) {
+    if (requestId !== calculationRequestId) return;
+    $("statusLine").textContent = `服务器计算暂不可用：${error.message}`;
+    return;
+  }
   if (!result.schemes || result.schemes.length === 0) return;
 
-  const selected = getBestScheme(result.schemes) || result.schemes[0];
+  const selected = result.selected || result.schemes[0];
   if (!selected) return;
 
   $("termPill").textContent = result.inputs.tradeTerm;
@@ -584,18 +530,26 @@ function getTermNote(term) {
   return "CFR通常包含国际海运费，不包含目的港清关、关税、目的港杂费和目的地派送。";
 }
 
-function renderImportCostSummary(inputs, costs = estimateImportCosts(inputs, 0, 0)) {
+function renderImportCostSummary(inputs, costs = {}) {
   const scope = $("importScope");
   const note = $("importCostNote");
   if (!scope || !note) return;
+  const safeCosts = {
+    destinationLocal: 0,
+    clearance: 0,
+    duty: 0,
+    importTax: 0,
+    customsValue: 0,
+    ...costs
+  };
   if (inputs.tradeTerm === "DDP") {
-    scope.textContent = `已计入DDP：派送/其他 ${money(costs.destinationLocal)}，清关 ${money(costs.clearance)}，关税 ${money(costs.duty)}，VAT/GST ${money(costs.importTax)}`;
+    scope.textContent = `已计入DDP：派送/其他 ${money(safeCosts.destinationLocal)}，清关 ${money(safeCosts.clearance)}，关税 ${money(safeCosts.duty)}，VAT/GST ${money(safeCosts.importTax)}`;
   } else if (inputs.tradeTerm === "DAP") {
-    scope.textContent = `已计入DAP：目的国派送/其他 ${money(costs.destinationLocal)}；关税/VAT仅作参考`;
+    scope.textContent = `已计入DAP：目的国派送/其他 ${money(safeCosts.destinationLocal)}；关税/VAT仅作参考`;
   } else {
     scope.textContent = `${inputs.tradeTerm}不自动计入目的国费用`;
   }
-  note.textContent = `估算完税基础 ${money(costs.customsValue)}；进口关税 ${money(costs.duty)}；进口VAT/GST ${money(costs.importTax)}。政策与税率请按目的国、HS编码和原产地确认。`;
+  note.textContent = `估算完税基础 ${money(safeCosts.customsValue)}；进口关税 ${money(safeCosts.duty)}；进口VAT/GST ${money(safeCosts.importTax)}。政策与税率请按目的国、HS编码和原产地确认。`;
 }
 
 function syncAndRender() {
@@ -756,315 +710,10 @@ function download(filename, mime, content) {
   URL.revokeObjectURL(link.href);
 }
 
-const defaultExclusion = "目的港清关、关税、目的港杂费、仓储费、查验费、目的地派送及其他买方当地费用默认不包含在CFR报价内。";
-
-function tx(lang, zh, en) {
-  if (lang === "en") return en;
-  if (lang === "bilingual") return `${zh} / ${en}`;
-  return zh;
-}
-
-function yesNo(value, lang) {
-  return value ? tx(lang, "是", "Yes") : tx(lang, "否", "No");
-}
-
-function currencyLabel(currency, lang = "zh") {
-  if (currency === "RMB") return tx(lang, "人民币", "RMB");
-  if (currency === "EUR") return tx(lang, "欧元", "EUR");
-  return tx(lang, "美元", "USD");
-}
-
-function freightName(scheme, lang) {
-  return scheme;
-}
-
-function quoteTitle(projectName, lang, detail = false) {
-  const base = detail ? tx(lang, "报价明细", "Quotation Detail") : tx(lang, "报价单", "Quotation");
-  return `${projectName} ${base}`.trim();
-}
-
 function languageSuffix(lang) {
   if (lang === "en") return "English";
   if (lang === "bilingual") return "中英双语";
   return "中文";
-}
-
-function sheetName(name) {
-  return escapeXml(String(name).replace(/[\\/:*?\[\]]/g, " ").slice(0, 31).trim() || "Sheet");
-}
-
-function buildMarkdown(mode, lang = "zh") {
-  if (mode === "customer") return buildCustomerMarkdown(lang);
-  return buildInternalMarkdown(lang);
-}
-
-function buildInternalMarkdown(lang = "zh") {
-  const { inputs, goodsCost, schemes } = calculate();
-  const selected = getBestScheme(schemes) || schemes[0];
-  const lines = [];
-  lines.push(`# ${escapeMd(quoteTitle(inputs.projectName, lang, true))}`);
-  lines.push("");
-  if (inputs.companyName) lines.push(`- ${tx(lang, "我方公司", "Quoted by")}：${escapeMd(inputs.companyName)}`);
-  lines.push(`- ${tx(lang, "贸易术语", "Trade Term")}：${inputs.tradeTerm}`);
-  lines.push(`- ${tx(lang, "柜型", "Container Type")}：${escapeMd(inputs.containerType)}`);
-  lines.push(`- ${tx(lang, "目的港/目的地", "Destination")}：${escapeMd(inputs.destination)}`);
-  lines.push(`- ${tx(lang, "报价有效期", "Valid Until")}：${escapeMd(inputs.validUntil)}`);
-  lines.push(`- ${tx(lang, "USD兑RMB汇率", "USD/RMB Rate")}：${inputs.exchangeRate}`);
-  lines.push(`- ${tx(lang, "EUR兑RMB汇率", "EUR/RMB Rate")}：${inputs.eurExchangeRate}`);
-  lines.push(`- ${tx(lang, "最终报价币种", "Final Currency")}：${inputs.outputCurrency}`);
-  if (inputs.destinationCountry) lines.push(`- ${tx(lang, "目的国", "Destination Country")}：${escapeMd(inputs.destinationCountry)}`);
-  if (inputs.hsCode) lines.push(`- ${tx(lang, "HS编码", "HS Code")}：${escapeMd(inputs.hsCode)}`);
-  lines.push(`- ${tx(lang, "进口关税率", "Import Duty Rate")}：${inputs.dutyRate}%`);
-  lines.push(`- ${tx(lang, "进口VAT/GST", "Import VAT/GST")}：${inputs.importVatRate}%`);
-  lines.push("");
-  lines.push(`## ${tx(lang, "货物成本", "Cargo Cost")}`);
-  lines.push("");
-  lines.push(`|${tx(lang, "货物名称", "Cargo")}|${tx(lang, "图片", "Image")}|${tx(lang, "规格", "Specification")}|${tx(lang, "长(cm)", "Length(cm)")}|${tx(lang, "高(cm)", "Height(cm)")}|${tx(lang, "宽(cm)", "Width(cm)")}|${tx(lang, "单箱KG", "KG/Unit")}|${tx(lang, "数量", "Qty")}|${tx(lang, "单价RMB", "Unit Price RMB")}|${tx(lang, "税率", "Tax Rate")}|${tx(lang, "税费RMB", "Tax RMB")}|${tx(lang, "合计RMB", "Total RMB")}|${tx(lang, "平均报价单价", "Avg Quote Unit")} ${inputs.outputCurrency}|${tx(lang, "报价金额", "Quote Amount")} ${inputs.outputCurrency}|`);
-  lines.push("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
-  state.cargo.forEach((row) => {
-    lines.push(`|${escapeMd(row.name)}|${escapeMd(row.imageName || "")}|${escapeMd(row.spec)}|${row.length}|${row.height}|${row.width}|${fmt.format(row.weight)}|${row.qty}|${fmt.format(row.unitPrice)}|${row.taxRate}%|${fmt.format(cargoTax(row))}|${fmt.format(cargoTotal(row))}|${fmt.format(quoteUnitByCurrency(inputs.outputCurrency))}|${fmt.format(quoteLineByCurrency(row, inputs.outputCurrency))}|`);
-  });
-  lines.push(`|**${tx(lang, "货物总成本", "Total Cargo Cost")}**|||||||||||**${fmt.format(goodsCost)}**||**${fmt.format(quoteValueByCurrency(selected, inputs.outputCurrency))}**|`);
-  lines.push("");
-  lines.push(`## ${tx(lang, "货代费用", "Freight Forwarder Cost")}`);
-  lines.push("");
-  schemes.forEach(({ scheme }) => {
-    lines.push(`### ${freightName(scheme, lang)}`);
-    lines.push("");
-    lines.push(`|${tx(lang, "费用项目", "Cost Item")}|${tx(lang, "金额RMB", "Amount RMB")}|${tx(lang, "计入报价", "Included")}|`);
-    lines.push("|---|---:|---|");
-    state.freight.filter((row) => row.scheme === scheme).forEach((row) => {
-      lines.push(`|${escapeMd(row.item)}|${fmt.format(row.amount)}|${yesNo(row.included, lang)}|`);
-    });
-    const summary = schemes.find((item) => item.scheme === scheme);
-    lines.push(`|**${tx(lang, "计入费用合计", "Included Cost Total")}**|**${fmt.format(summary.freight)}**||`);
-    lines.push("");
-  });
-  lines.push(`## ${tx(lang, "利润测算", "Profit Calculation")}`);
-  lines.push("");
-  lines.push(`|${tx(lang, "方案", "Option")}|${tx(lang, "物流费RMB", "Logistics RMB")}|${tx(lang, "总成本RMB", "Total Cost RMB")}|${tx(lang, "报价USD", "Quote USD")}|${tx(lang, "报价EUR", "Quote EUR")}|${tx(lang, "最终报价RMB", "Final Quote RMB")}|${tx(lang, "净利润RMB", "Net Profit RMB")}|${tx(lang, "净利率", "Net Margin")}|${tx(lang, "成本加成率", "Markup")}|`);
-  lines.push("|---|---:|---:|---:|---:|---:|---:|---:|---:|");
-  schemes.forEach((row) => {
-    lines.push(`|${freightName(row.scheme, lang)}|${fmt.format(row.freight)}|${fmt.format(row.totalCost)}|${fmt.format(Math.round(row.quoteUsd))}|${fmt.format(Math.round(row.quoteEur))}|${fmt.format(row.quoteRmb)}|${fmt.format(row.profit)}|${pct(row.margin)}|${pct(row.markup)}|`);
-  });
-  lines.push("");
-  lines.push(`${tx(lang, "自动推荐方案", "Recommended option")}：${freightName(selected.scheme, lang)}，${tx(lang, "预计净利润", "Estimated net profit")} ${fmt.format(selected.profit)} RMB。`);
-  if (inputs.notes) {
-    lines.push("");
-    lines.push(`## ${tx(lang, "备注", "Notes")}`);
-    lines.push("");
-    lines.push(inputs.notes);
-  }
-  return lines.join("\n");
-}
-
-function buildCustomerMarkdown(lang = "zh") {
-  const { inputs, goodsCost, selected } = customerQuoteContext();
-  const lines = [];
-  lines.push(`# ${escapeMd(quoteTitle(inputs.projectName, lang))}`);
-  lines.push("");
-  lines.push(`| ${tx(lang, "项目", "Item")} | ${tx(lang, "内容", "Details")} |`);
-  lines.push("|---|---|");
-  if (inputs.companyName) lines.push(`| ${tx(lang, "我方公司", "Quoted by")} | ${escapeMd(inputs.companyName)} |`);
-  lines.push(`| ${tx(lang, "贸易术语", "Trade Term")} | ${inputs.tradeTerm} ${escapeMd(inputs.destination || tx(lang, "目的港", "Destination Port"))} |`);
-  lines.push(`| ${tx(lang, "柜型", "Container Type")} | ${escapeMd(inputs.containerType)} |`);
-  lines.push(`| ${tx(lang, "报价有效期", "Valid Until")} | ${escapeMd(inputs.validUntil)} |`);
-  lines.push(`| ${tx(lang, "报价金额", "Quotation Amount")} | **${formatQuoteMoney(quoteValueByCurrency(selected, inputs.outputCurrency), inputs.outputCurrency)}** |`);
-  lines.push("");
-  lines.push(`## ${tx(lang, "货物信息", "Cargo Information")}`);
-  lines.push("");
-  lines.push(`| ${tx(lang, "货物名称", "Cargo")} | ${tx(lang, "图片", "Image")} | ${tx(lang, "规格", "Specification")} | ${tx(lang, "长(cm)", "Length(cm)")} | ${tx(lang, "高(cm)", "Height(cm)")} | ${tx(lang, "宽(cm)", "Width(cm)")} | ${tx(lang, "单箱KG", "KG/Unit")} | ${tx(lang, "数量", "Qty")} | ${tx(lang, "报价单价", "Unit Price")} ${inputs.outputCurrency} | ${tx(lang, "报价金额", "Amount")} ${inputs.outputCurrency} |`);
-  lines.push("|---|---|---|---:|---:|---:|---:|---:|---:|---:|");
-  state.cargo.forEach((row) => {
-    lines.push(`|${escapeMd(row.name)}|${escapeMd(row.imageName || "")}|${escapeMd(row.spec)}|${row.length}|${row.height}|${row.width}|${fmt.format(row.weight)}|${row.qty}|${fmt.format(customerCargoUnitByCurrency(row, selected, goodsCost))}|${fmt.format(customerCargoLineByCurrency(row, selected, goodsCost))}|`);
-  });
-  lines.push("");
-  lines.push(`## ${tx(lang, "费用说明", "Cost Scope")}`);
-  lines.push("");
-  lines.push(`- ${getCustomerTermText(inputs.tradeTerm, inputs.destination, lang)}`);
-  lines.push(`- ${getExclusionText(inputs.tradeTerm, lang)}`);
-  if (inputs.notes && inputs.notes !== defaultExclusion) lines.push(`- ${escapeMd(inputs.notes)}`);
-  return lines.join("\n");
-}
-
-function getCustomerTermText(term, destination, lang = "zh") {
-  const place = destination || tx(lang, "指定目的港", "the named destination port");
-  if (term === "FOB") {
-    return tx(
-      lang,
-      "FOB报价包含货物、出口包装、送至中国起运港及出口报关相关费用。",
-      "FOB quotation includes cargo, export packing, delivery to the China port of loading, and export customs clearance charges."
-    );
-  }
-  if (term === "CIF") {
-    return tx(
-      lang,
-      `CIF报价包含货物、出口端费用、国际海运费及基础海运保险至${place}。`,
-      `CIF quotation includes cargo, origin-side charges, international ocean freight, and basic marine insurance to ${place}.`
-    );
-  }
-  if (term === "DAP") {
-    return tx(
-      lang,
-      `DAP报价包含货物、出口端费用、国际运输及目的国本地派送至${place}。`,
-      `DAP quotation includes cargo, origin-side charges, international transport, and destination local delivery to ${place}.`
-    );
-  }
-  if (term === "DDP") {
-    return tx(
-      lang,
-      `DDP报价包含货物、出口端费用、国际运输、目的国本地派送、进口清关、预估关税及进口税费至${place}。`,
-      `DDP quotation includes cargo, origin-side charges, international transport, destination local delivery, import clearance, estimated duties, and import taxes to ${place}.`
-    );
-  }
-  return tx(
-    lang,
-    `CFR报价包含货物、出口端费用及国际海运费至${place}。`,
-    `CFR quotation includes cargo, origin-side charges, and international ocean freight to ${place}.`
-  );
-}
-
-function getExclusionText(term = "CFR", lang = "zh") {
-  if (term === "FOB") {
-    return tx(
-      lang,
-      "不包含国际海运费、海运保险、目的港杂费、进口清关、关税税费、仓储查验、目的地派送及其他买方当地费用。",
-      "International ocean freight, marine insurance, destination port charges, import clearance, duties/taxes, storage, inspection, destination delivery, and other buyer-side local charges are excluded."
-    );
-  }
-  if (term === "CIF") {
-    return tx(
-      lang,
-      "不包含目的港杂费、进口清关、关税税费、仓储查验、目的地派送及其他买方当地费用。",
-      "Destination port charges, import clearance, duties/taxes, storage, inspection, destination delivery, and other buyer-side local charges are excluded."
-    );
-  }
-  if (term === "DAP") {
-    return tx(
-      lang,
-      "不包含进口清关、关税税费、进口许可证、海关查验及因买方原因产生的仓储、滞港、滞箱等目的国费用。",
-      "Import clearance, duties/taxes, import licenses, customs inspection, and buyer-caused destination storage, demurrage, detention, or similar charges are excluded."
-    );
-  }
-  if (term === "DDP") {
-    return tx(
-      lang,
-      "不包含买方原因造成的仓储、滞港、滞箱、特殊查验、二次派送及报价未列明的目的地附加费用；进口税费按报价时预估口径执行。",
-      "Buyer-caused storage, demurrage, detention, special inspection, redelivery, and destination surcharges not stated in the quotation are excluded; import duties/taxes follow the estimate used in this quotation."
-    );
-  }
-  return tx(
-    lang,
-    "不包含海运保险、目的港杂费、进口清关、关税税费、仓储查验、目的地派送及其他买方当地费用。",
-    "Marine insurance, destination port charges, import clearance, duties/taxes, storage, inspection, destination delivery, and other buyer-side local charges are excluded."
-  );
-}
-
-function xmlCell(value, type = "String") {
-  const safe = escapeXml(value);
-  if (type === "Number") return `<Cell><Data ss:Type="Number">${safe}</Data></Cell>`;
-  return `<Cell><Data ss:Type="String">${safe}</Data></Cell>`;
-}
-
-function xmlRow(values) {
-  return `<Row>${values.map((item) => Array.isArray(item) ? xmlCell(item[0], item[1]) : xmlCell(item)).join("")}</Row>`;
-}
-
-function buildExcelXml(mode, lang = "zh") {
-  if (mode === "customer") return buildCustomerExcelXml(lang);
-  return buildInternalExcelXml(lang);
-}
-
-function buildInternalExcelXml(lang = "zh") {
-  const { inputs, goodsCost, schemes } = calculate();
-  const selected = getBestScheme(schemes) || schemes[0];
-  const cargoRows = [
-    xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "图片", "Image"), tx(lang, "规格", "Specification"), tx(lang, "长(cm)", "Length(cm)"), tx(lang, "高(cm)", "Height(cm)"), tx(lang, "宽(cm)", "Width(cm)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), tx(lang, "单价RMB", "Unit Price RMB"), tx(lang, "税率%", "Tax Rate %"), tx(lang, "税费RMB", "Tax RMB"), tx(lang, "合计RMB", "Total RMB"), `${tx(lang, "平均报价单价", "Avg Quote Unit")} ${inputs.outputCurrency}`, `${tx(lang, "报价金额", "Quote Amount")} ${inputs.outputCurrency}`]),
-    ...state.cargo.map((row) => xmlRow([
-      row.name, row.imageName || "", row.spec,
-      [row.length, "Number"], [row.height, "Number"], [row.width, "Number"], [row.weight, "Number"], [row.qty, "Number"],
-      [row.unitPrice, "Number"], [row.taxRate, "Number"], [cargoTax(row), "Number"], [cargoTotal(row), "Number"], [quoteUnitByCurrency(inputs.outputCurrency), "Number"], [quoteLineByCurrency(row, inputs.outputCurrency), "Number"]
-    ])),
-    xmlRow([tx(lang, "货物总成本", "Total Cargo Cost"), "", "", "", "", "", "", "", "", "", "", [goodsCost, "Number"], "", [quoteValueByCurrency(selected, inputs.outputCurrency), "Number"]])
-  ].join("");
-
-  const freightRows = [
-    xmlRow([tx(lang, "方案", "Option"), tx(lang, "费用项目", "Cost Item"), tx(lang, "金额RMB", "Amount RMB"), tx(lang, "计入报价", "Included")]),
-    ...state.freight.map((row) => xmlRow([freightName(row.scheme, lang), row.item, [row.amount, "Number"], yesNo(row.included, lang)]))
-  ].join("");
-
-  const summaryRows = [
-    xmlRow([tx(lang, "我方公司", "Quoted by"), inputs.companyName]),
-    xmlRow([tx(lang, "项目/客户", "Project/Customer"), inputs.projectName]),
-    xmlRow([tx(lang, "贸易术语", "Trade Term"), inputs.tradeTerm]),
-    xmlRow([tx(lang, "柜型", "Container Type"), inputs.containerType]),
-    xmlRow([tx(lang, "目的港/目的地", "Destination"), inputs.destination]),
-    xmlRow([tx(lang, "目的国", "Destination Country"), inputs.destinationCountry]),
-    xmlRow([tx(lang, "HS编码", "HS Code"), inputs.hsCode]),
-    xmlRow([tx(lang, "报价有效期", "Valid Until"), inputs.validUntil]),
-    xmlRow([tx(lang, "USD兑RMB汇率", "USD/RMB Rate"), [inputs.exchangeRate, "Number"]]),
-    xmlRow([tx(lang, "EUR兑RMB汇率", "EUR/RMB Rate"), [inputs.eurExchangeRate, "Number"]]),
-    xmlRow([tx(lang, "进口关税率%", "Import Duty Rate %"), [inputs.dutyRate, "Number"]]),
-    xmlRow([tx(lang, "进口VAT/GST%", "Import VAT/GST %"), [inputs.importVatRate, "Number"]]),
-    xmlRow([tx(lang, "目的国派送费RMB", "Destination Delivery RMB"), [inputs.destinationDelivery, "Number"]]),
-    xmlRow([tx(lang, "进口清关服务费RMB", "Import Clearance RMB"), [inputs.destinationClearance, "Number"]]),
-    xmlRow([tx(lang, "目的国其他费用RMB", "Other Destination RMB"), [inputs.destinationOther, "Number"]]),
-    xmlRow([tx(lang, "最终报价币种", "Final Currency"), currencyLabel(inputs.outputCurrency, lang)]),
-    xmlRow([`${tx(lang, "最终客户报价", "Final Customer Quote")} ${inputs.outputCurrency}`, [quoteValueByCurrency(selected, inputs.outputCurrency), "Number"]]),
-    xmlRow([tx(lang, "最终客户报价折合RMB", "Final Quote RMB"), [selected.quoteRmb, "Number"]]),
-    xmlRow([""]),
-    xmlRow([tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "总成本RMB", "Total Cost RMB"), tx(lang, "报价USD", "Quote USD"), tx(lang, "报价EUR", "Quote EUR"), tx(lang, "最终报价RMB", "Final Quote RMB"), tx(lang, "净利润RMB", "Net Profit RMB"), tx(lang, "净利率%", "Net Margin %"), tx(lang, "成本加成率%", "Markup %")]),
-    ...schemes.map((row) => xmlRow([
-      freightName(row.scheme, lang), [row.freight, "Number"], [row.totalCost, "Number"], [row.quoteUsd, "Number"], [row.quoteEur, "Number"], [row.quoteRmb, "Number"],
-      [row.profit, "Number"], [row.margin, "Number"], [row.markup, "Number"]
-    ])),
-    xmlRow([""]),
-    xmlRow([tx(lang, "备注", "Notes"), inputs.notes])
-  ].join("");
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Worksheet ss:Name="${sheetName(tx(lang, "报价汇总", "Summary"))}"><Table>${summaryRows}</Table></Worksheet>
- <Worksheet ss:Name="${sheetName(tx(lang, "货物成本", "Cargo Cost"))}"><Table>${cargoRows}</Table></Worksheet>
- <Worksheet ss:Name="${sheetName(tx(lang, "货代费用", "Freight Cost"))}"><Table>${freightRows}</Table></Worksheet>
-</Workbook>`;
-}
-
-function buildCustomerExcelXml(lang = "zh") {
-  const { inputs, goodsCost, selected } = customerQuoteContext();
-  const infoRows = [
-    xmlRow([quoteTitle(inputs.projectName, lang)]),
-    xmlRow([tx(lang, "项目", "Item"), tx(lang, "内容", "Details")]),
-    xmlRow([tx(lang, "我方公司", "Quoted by"), inputs.companyName]),
-    xmlRow([tx(lang, "贸易术语", "Trade Term"), `${inputs.tradeTerm} ${inputs.destination || tx(lang, "目的港", "Destination Port")}`]),
-    xmlRow([tx(lang, "柜型", "Container Type"), inputs.containerType]),
-    xmlRow([tx(lang, "报价有效期", "Valid Until"), inputs.validUntil]),
-    xmlRow([tx(lang, "报价金额", "Quotation Amount"), formatQuoteMoney(quoteValueByCurrency(selected, inputs.outputCurrency), inputs.outputCurrency)]),
-    xmlRow([""]),
-    xmlRow([tx(lang, "货物名称", "Cargo"), tx(lang, "图片", "Image"), tx(lang, "规格", "Specification"), tx(lang, "长(cm)", "Length(cm)"), tx(lang, "高(cm)", "Height(cm)"), tx(lang, "宽(cm)", "Width(cm)"), tx(lang, "单箱KG", "KG/Unit"), tx(lang, "数量", "Qty"), `${tx(lang, "报价单价", "Unit Price")} ${inputs.outputCurrency}`, `${tx(lang, "报价金额", "Amount")} ${inputs.outputCurrency}`]),
-    ...state.cargo.map((row) => xmlRow([
-      row.name, row.imageName || "", row.spec,
-      [row.length, "Number"], [row.height, "Number"], [row.width, "Number"], [row.weight, "Number"], [row.qty, "Number"], [customerCargoUnitByCurrency(row, selected, goodsCost), "Number"], [customerCargoLineByCurrency(row, selected, goodsCost), "Number"]
-    ])),
-    xmlRow([""]),
-    xmlRow([tx(lang, "费用说明", "Cost Scope")]),
-    xmlRow([getCustomerTermText(inputs.tradeTerm, inputs.destination, lang)]),
-    xmlRow([getExclusionText(inputs.tradeTerm, lang)]),
-    xmlRow([inputs.notes && inputs.notes !== defaultExclusion ? inputs.notes : ""])
-  ].join("");
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Worksheet ss:Name="${sheetName(tx(lang, "客户报价单", "Customer Quote"))}"><Table>${infoRows}</Table></Worksheet>
-</Workbook>`;
 }
 
 function safeName() {
@@ -1102,20 +751,41 @@ async function downloadExcel(mode, lang, suffix, langSuffix) {
     URL.revokeObjectURL(link.href);
     $("statusLine").textContent = `已通过服务器生成专业Excel（${suffix}）`;
   } catch (e) {
-    $("statusLine").textContent = "服务器未响应，回退到浏览器版本";
-    download(`${safeName()}_报价表_${suffix}_${langSuffix}.xls`, "application/vnd.ms-excel;charset=utf-8", buildExcelXml(mode, lang));
+    $("statusLine").textContent = "Excel导出失败，请确认服务器可用。";
+    alert("Excel导出失败: " + e.message);
   }
 }
 
-function downloadSelectedVersion(mode) {
+async function downloadMarkdown(mode, lang, suffix, langSuffix) {
+  try {
+    const snapshot = normalizeSnapshotForServer(getSnapshot("MD导出"));
+    const resp = await fetch(`/api/export/markdown?mode=${mode}&lang=${lang}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(snapshot),
+    });
+    if (!resp.ok) {
+      const message = await resp.text();
+      throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
+    }
+    const content = await resp.text();
+    download(`${safeName()}_报价表_${suffix}_${langSuffix}.md`, "text/markdown;charset=utf-8", content);
+    $("statusLine").textContent = `已通过服务器生成MD（${suffix}）`;
+  } catch (e) {
+    $("statusLine").textContent = "MD导出失败，请确认服务器可用。";
+    alert("MD导出失败: " + e.message);
+  }
+}
+
+async function downloadSelectedVersion(mode) {
   const suffix = mode === "customer" ? "客户版" : "内部留存版";
   const lang = $("exportLanguage").value;
   const langSuffix = languageSuffix(lang);
   if (pendingDownloadType === "md") {
-    download(`${safeName()}_报价表_${suffix}_${langSuffix}.md`, "text/markdown;charset=utf-8", buildMarkdown(mode, lang));
+    await downloadMarkdown(mode, lang, suffix, langSuffix);
   }
   if (pendingDownloadType === "excel") {
-    downloadExcel(mode, lang, suffix, langSuffix);
+    await downloadExcel(mode, lang, suffix, langSuffix);
   }
   closeExportDialog();
 }
@@ -1652,32 +1322,36 @@ function clearPi() {
   $("piStatusLine").textContent = "已清空当前PI内容。";
 }
 
-function importQuoteToPi() {
-  const { inputs, goodsCost, selected } = customerQuoteContext();
-  const currency = inputs.outputCurrency || "USD";
-  $("piSellerCompany").value = inputs.companyName;
-  $("piBuyerCompany").value = inputs.projectName;
-  $("piIncoterms").value = inputs.tradeTerm;
-  $("piDestination").value = inputs.destination;
-  $("piValidity").value = inputs.validUntil || $("piValidity").value;
-  $("piCurrency").value = currency;
-  $("piNo").value = $("piNo").value || defaultPiNo();
-  $("piIssueDate").value = $("piIssueDate").value || todayISO();
-  $("piPaymentReference").value = `${$("piNo").value} - ${inputs.projectName}`;
-  piState.items = state.cargo.map((row) => ({
-    product: row.name,
-    material: "",
-    finish: "",
-    size: cargoSizeCm(row),
-    qty: cleanNum(row.qty) || 1,
-    unit: "set",
-    unitPrice: Math.round(customerCargoUnitByCurrency(row, selected, goodsCost) * 100) / 100,
-    remarks: row.spec
-  }));
-  if (!piState.items.length) addPiItem();
-  renderPi();
-  persistPiDraft();
-  setActiveView("pi");
+async function importQuoteToPi() {
+  try {
+    const { inputs, goodsCost, selected } = await ensureCalculationResult();
+    const currency = inputs.outputCurrency || "USD";
+    $("piSellerCompany").value = inputs.companyName;
+    $("piBuyerCompany").value = inputs.projectName;
+    $("piIncoterms").value = inputs.tradeTerm;
+    $("piDestination").value = inputs.destination;
+    $("piValidity").value = inputs.validUntil || $("piValidity").value;
+    $("piCurrency").value = currency;
+    $("piNo").value = $("piNo").value || defaultPiNo();
+    $("piIssueDate").value = $("piIssueDate").value || todayISO();
+    $("piPaymentReference").value = `${$("piNo").value} - ${inputs.projectName}`;
+    piState.items = state.cargo.map((row) => ({
+      product: row.name,
+      material: "",
+      finish: "",
+      size: cargoSizeCm(row),
+      qty: cleanNum(row.qty) || 1,
+      unit: "set",
+      unitPrice: Math.round(customerCargoUnitByCurrency(row, selected, goodsCost, currency) * 100) / 100,
+      remarks: row.spec
+    }));
+    if (!piState.items.length) addPiItem();
+    renderPi();
+    persistPiDraft();
+    setActiveView("pi");
+  } catch (e) {
+    alert("从报价带入PI失败: " + e.message);
+  }
 }
 
 function piSafeName() {

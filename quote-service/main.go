@@ -4,8 +4,8 @@ import (
 	"flag"
 	"log"
 
-	"excelutil/internal/httpapi"
-	"excelutil/internal/runner"
+	"quote-service/internal/httpapi"
+	"quote-service/internal/runner"
 )
 
 func main() {
