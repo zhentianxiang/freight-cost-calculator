@@ -132,10 +132,43 @@ h1 {
   border-color: var(--primary);
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .btn.danger {
   color: var(--red);
   border-color: #f2b8b5;
   background: #fffafa;
+}
+
+.toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  min-width: min(320px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  padding: 12px 16px;
+  border: 1px solid #b7dec6;
+  border-radius: 8px;
+  background: #f0fbf4;
+  color: #1d6b37;
+  box-shadow: var(--shadow);
+  text-align: center;
+  font-weight: 700;
+}
+
+.toast.error {
+  border-color: #f2b8b5;
+  background: #fff5f5;
+  color: var(--red);
+}
+
+.toast.hidden {
+  display: none;
 }
 
 .grid {

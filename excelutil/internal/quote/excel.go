@@ -448,10 +448,9 @@ func filterFreight(items []FreightRow, scheme string) []FreightRow {
 
 func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	inputs := snap.Inputs
-	_, summaries := CalculateSchemes(snap)
+	goodsCost, summaries := CalculateSchemes(snap)
 	best := bestScheme(summaries)
-	qty := totalCargoQty(snap.Cargo)
-	unitQuote := quoteUnitUsd(quoteValue(best, inputs.OutputCurrency), qty)
+	customerTotal := quoteValue(best, inputs.OutputCurrency)
 
 	sheet := safeSheetName(tx(lang, "客户报价单", "Quotation"))
 
@@ -489,7 +488,7 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		{tx(lang, "贸易术语", "Trade Term"), fmt.Sprintf("%s %s", inputs.TradeTerm, inputs.Destination)},
 		{tx(lang, "柜型", "Container"), inputs.ContainerType},
 		{tx(lang, "报价有效期", "Valid Until"), inputs.ValidUntil},
-		{tx(lang, "报价金额", "Quotation Amount"), formatCurrency(quoteValue(best, inputs.OutputCurrency), inputs.OutputCurrency)},
+		{tx(lang, "报价金额", "Quotation Amount"), formatCurrency(customerTotal, inputs.OutputCurrency)},
 	}
 	for _, item := range quoteInfo {
 		if item.value == "" {
@@ -520,7 +519,7 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		tx(lang, "宽(cm)", "Width(cm)"),
 		tx(lang, "单箱KG", "KG/Unit"),
 		tx(lang, "数量", "Qty"),
-		fmt.Sprintf("%s %s", tx(lang, "均单价", "Unit Price"), inputs.OutputCurrency),
+		fmt.Sprintf("%s %s", tx(lang, "报价单价", "Unit Price"), inputs.OutputCurrency),
 		fmt.Sprintf("%s %s", tx(lang, "金额", "Amount"), inputs.OutputCurrency),
 	}
 	for i, h := range headers {
@@ -547,8 +546,8 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		setVal(f, sheet, fmt.Sprintf("F%d", row), cr.Width, moneySt)
 		setMoney(f, sheet, fmt.Sprintf("G%d", row), cr.Weight, moneySt)
 		setMoney(f, sheet, fmt.Sprintf("H%d", row), cr.Qty, moneySt)
-		setMoney(f, sheet, fmt.Sprintf("I%d", row), unitQuote, moneySt)
-		setMoney(f, sheet, fmt.Sprintf("J%d", row), quoteLineUsd(cr, unitQuote), moneySt)
+		setMoney(f, sheet, fmt.Sprintf("I%d", row), customerCargoUnit(cr, best, goodsCost, inputs), moneySt)
+		setMoney(f, sheet, fmt.Sprintf("J%d", row), customerCargoLine(cr, best, goodsCost, inputs), moneySt)
 		row++
 	}
 
@@ -557,8 +556,8 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		col := string(rune('A' + i))
 		setVal(f, sheet, fmt.Sprintf("%s%d", col, row), "", s.TotalStyle)
 	}
-	setVal(f, sheet, fmt.Sprintf("I%d", row), unitQuote, s.TotalMoneyStyle)
-	setVal(f, sheet, fmt.Sprintf("J%d", row), quoteValue(best, inputs.OutputCurrency), s.TotalMoneyStyle)
+	setVal(f, sheet, fmt.Sprintf("I%d", row), "", s.TotalMoneyStyle)
+	setVal(f, sheet, fmt.Sprintf("J%d", row), customerTotal, s.TotalMoneyStyle)
 	row++
 	row++
 
@@ -570,7 +569,7 @@ func writeCustomer(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	row++
 
 	termText := getCustomerTermText(inputs.TradeTerm, inputs.Destination, lang)
-	exclusionText := getExclusionText(lang)
+	exclusionText := getExclusionText(inputs.TradeTerm, lang)
 
 	setVal(f, sheet, fmt.Sprintf("A%d", row), "• "+termText, s.NoteStyle)
 	f.MergeCell(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("J%d", row))
@@ -596,6 +595,21 @@ func quoteValue(row SummaryRow, currency string) float64 {
 	default:
 		return row.QuoteUsd
 	}
+}
+
+func customerCargoUnit(row CargoRow, selected SummaryRow, goodsCost float64, inputs Inputs) float64 {
+	if row.Qty == 0 || goodsCost == 0 {
+		return 0
+	}
+	return customerCargoLine(row, selected, goodsCost, inputs) / row.Qty
+}
+
+func customerCargoLine(row CargoRow, selected SummaryRow, goodsCost float64, inputs Inputs) float64 {
+	if goodsCost == 0 {
+		return 0
+	}
+	ratio := cargoTotal(row) / goodsCost
+	return quoteValue(selected, inputs.OutputCurrency) * ratio
 }
 
 func currencyName(currency, lang string) string {

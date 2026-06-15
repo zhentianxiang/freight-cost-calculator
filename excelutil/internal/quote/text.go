@@ -15,31 +15,50 @@ func getCustomerTermText(term, destination, lang string) string {
 	switch term {
 	case "FOB":
 		return tx(lang,
-			"报价包含货物至中国起运港并完成出口报关相关费用，不包含国际海运费、保险费及目的港费用。",
-			"The quotation includes cargo, delivery to the China port of loading, and export customs clearance. International ocean freight, insurance, and destination charges are excluded.")
+			"FOB报价包含货物、出口包装、送至中国起运港及出口报关相关费用。",
+			"FOB quotation includes cargo, export packing, delivery to the China port of loading, and export customs clearance charges.")
 	case "CIF":
 		return tx(lang,
-			fmt.Sprintf("报价包含货物、出口端费用、国际海运费及基础海运保险至%s。", place),
-			fmt.Sprintf("The quotation includes cargo, origin-side charges, international ocean freight, and basic marine insurance to %s.", place))
+			fmt.Sprintf("CIF报价包含货物、出口端费用、国际海运费及基础海运保险至%s。", place),
+			fmt.Sprintf("CIF quotation includes cargo, origin-side charges, international ocean freight, and basic marine insurance to %s.", place))
 	case "DAP":
 		return tx(lang,
-			fmt.Sprintf("报价包含货物、出口端费用、国际运输及目的国本地派送至%s，不包含进口清关、关税及进口税费。", place),
-			fmt.Sprintf("The quotation includes cargo, origin-side charges, international transport, and destination local delivery to %s. Import clearance, duties, and import taxes are excluded.", place))
+			fmt.Sprintf("DAP报价包含货物、出口端费用、国际运输及目的国本地派送至%s。", place),
+			fmt.Sprintf("DAP quotation includes cargo, origin-side charges, international transport, and destination local delivery to %s.", place))
 	case "DDP":
 		return tx(lang,
-			fmt.Sprintf("报价包含货物、出口端费用、国际运输、目的国本地派送、进口清关、预估关税及进口税费至%s。", place),
-			fmt.Sprintf("The quotation includes cargo, origin-side charges, international transport, destination local delivery, import clearance, estimated duties, and import taxes to %s.", place))
+			fmt.Sprintf("DDP报价包含货物、出口端费用、国际运输、目的国本地派送、进口清关、预估关税及进口税费至%s。", place),
+			fmt.Sprintf("DDP quotation includes cargo, origin-side charges, international transport, destination local delivery, import clearance, estimated duties, and import taxes to %s.", place))
 	default:
 		return tx(lang,
-			fmt.Sprintf("报价包含货物、出口端费用及国际海运费至%s。", place),
-			fmt.Sprintf("The quotation includes cargo, origin-side charges, and international ocean freight to %s.", place))
+			fmt.Sprintf("CFR报价包含货物、出口端费用及国际海运费至%s。", place),
+			fmt.Sprintf("CFR quotation includes cargo, origin-side charges, and international ocean freight to %s.", place))
 	}
 }
 
-func getExclusionText(lang string) string {
-	return tx(lang,
-		defaultExclusion,
-		defaultExclusion2)
+func getExclusionText(term, lang string) string {
+	switch term {
+	case "FOB":
+		return tx(lang,
+			"不包含国际海运费、海运保险、目的港杂费、进口清关、关税税费、仓储查验、目的地派送及其他买方当地费用。",
+			"International ocean freight, marine insurance, destination port charges, import clearance, duties/taxes, storage, inspection, destination delivery, and other buyer-side local charges are excluded.")
+	case "CIF":
+		return tx(lang,
+			"不包含目的港杂费、进口清关、关税税费、仓储查验、目的地派送及其他买方当地费用。",
+			"Destination port charges, import clearance, duties/taxes, storage, inspection, destination delivery, and other buyer-side local charges are excluded.")
+	case "DAP":
+		return tx(lang,
+			"不包含进口清关、关税税费、进口许可证、海关查验及因买方原因产生的仓储、滞港、滞箱等目的国费用。",
+			"Import clearance, duties/taxes, import licenses, customs inspection, and buyer-caused destination storage, demurrage, detention, or similar charges are excluded.")
+	case "DDP":
+		return tx(lang,
+			"不包含买方原因造成的仓储、滞港、滞箱、特殊查验、二次派送及报价未列明的目的地附加费用；进口税费按报价时预估口径执行。",
+			"Buyer-caused storage, demurrage, detention, special inspection, redelivery, and destination surcharges not stated in the quotation are excluded; import duties/taxes follow the estimate used in this quotation.")
+	default:
+		return tx(lang,
+			"不包含海运保险、目的港杂费、进口清关、关税税费、仓储查验、目的地派送及其他买方当地费用。",
+			"Marine insurance, destination port charges, import clearance, duties/taxes, storage, inspection, destination delivery, and other buyer-side local charges are excluded.")
+	}
 }
 
 func tx(lang, zh, en string) string {
