@@ -202,8 +202,6 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	inputs := snap.Inputs
 	goodsCost, summaries := CalculateSchemes(snap)
 	best := bestScheme(summaries)
-	qty := totalCargoQty(snap.Cargo)
-	unitQuote := quoteUnitUsd(quoteValue(best, inputs.OutputCurrency), qty)
 
 	sheet1 := safeSheetName(tx(lang, "内部核算汇总", "Internal Master Summary"))
 	f.SetSheetName("Sheet1", sheet1)
@@ -314,8 +312,8 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		tx(lang, "税率%", "Tax%"),
 		tx(lang, "税费RMB", "Tax Amt"),
 		tx(lang, "合计RMB", "Total RMB"),
-		fmt.Sprintf("%s%s", tx(lang, "单价", "Unit "), inputs.OutputCurrency),
-		fmt.Sprintf("%s%s", tx(lang, "金额", "Total "), inputs.OutputCurrency),
+		tx(lang, "成本单价USD", "Cost Unit USD"),
+		tx(lang, "成本金额USD", "Cost Total USD"),
 	}
 	for i, h := range cargoHeaders {
 		col := string(rune('A' + i))
@@ -345,8 +343,8 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		setVal(f, sheet1, fmt.Sprintf("J%d", row), fmtPct(cr.TaxRate), st)
 		setMoney(f, sheet1, fmt.Sprintf("K%d", row), cargoTax(cr), mst)
 		setMoney(f, sheet1, fmt.Sprintf("L%d", row), cargoTotal(cr), mst)
-		setMoney(f, sheet1, fmt.Sprintf("M%d", row), unitQuote, mst)
-		setMoney(f, sheet1, fmt.Sprintf("N%d", row), quoteLineUsd(cr, unitQuote), mst)
+		setMoney(f, sheet1, fmt.Sprintf("M%d", row), cargoCostUnitUsd(cr, inputs), mst)
+		setMoney(f, sheet1, fmt.Sprintf("N%d", row), cargoCostLineUsd(cr, inputs), mst)
 		row++
 	}
 	row++

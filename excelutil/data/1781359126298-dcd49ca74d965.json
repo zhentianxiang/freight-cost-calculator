@@ -1,0 +1,48 @@
+{
+  "id": "1781359126298-dcd49ca74d965",
+  "label": "服务器归档",
+  "updatedAt": "2026-06-13T13:58:46.298Z",
+  "inputs": {
+    "companyName": "Tianjiang carving",
+    "projectName": "Mohammed",
+    "tradeTerm": "FOB",
+    "containerType": "20GP",
+    "destination": "India",
+    "validUntil": "6月21日",
+    "exchangeRate": 6.776548,
+    "quoteUsd": 5550,
+    "targetProfit": 15,
+    "selectedScheme": "A货代",
+    "notes": "目的港清关、关税、目的港杂费、目的地派送等费用默认不包含在CFR报价内。"
+  },
+  "schemes": [
+    "A货代"
+  ],
+  "cargo": [
+    {
+      "name": "marble fountain",
+      "spec": "size",
+      "length": 3,
+      "height": 2.2,
+      "width": 3,
+      "weight": 4000,
+      "qty": 1,
+      "unitPrice": 22000,
+      "taxRate": 13
+    }
+  ],
+  "freight": [
+    {
+      "scheme": "A货代",
+      "item": "港杂费用",
+      "amount": 3200,
+      "included": true
+    },
+    {
+      "scheme": "A货代",
+      "item": "送货到港口费用",
+      "amount": 2000,
+      "included": true
+    }
+  ]
+}

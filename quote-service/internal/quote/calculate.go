@@ -184,15 +184,18 @@ func cargoTotal(c CargoRow) float64 {
 	return (c.UnitPrice * c.Qty) + cargoTax(c)
 }
 
-func quoteUnitUsd(totalUsd, totalQty float64) float64 {
-	if totalQty == 0 {
+func cargoCostUnitUsd(c CargoRow, inputs Inputs) float64 {
+	if c.Qty == 0 {
 		return 0
 	}
-	return totalUsd / totalQty
+	return cargoCostLineUsd(c, inputs) / c.Qty
 }
 
-func quoteLineUsd(c CargoRow, unitUsd float64) float64 {
-	return c.Qty * unitUsd
+func cargoCostLineUsd(c CargoRow, inputs Inputs) float64 {
+	if inputs.ExchangeRate == 0 {
+		return 0
+	}
+	return cargoTotal(c) / inputs.ExchangeRate
 }
 
 func FixDefaults(snap *Snapshot) {
