@@ -977,6 +977,42 @@ async function deleteSnapshot(id, event) {
   }
 }
 
+async function updateSnapshotLabel(id, event) {
+  event.stopPropagation();
+  const button = event.target.closest("[data-update-label-id]");
+  const editor = button?.closest(".history-label-editor");
+  const input = editor?.querySelector(".history-label-input");
+  if (!button || !input) return;
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "保存中";
+  try {
+    const resp = await fetch("/api/update-label", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, label: input.value })
+    });
+    if (!resp.ok) {
+      const message = await resp.text();
+      throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
+    }
+    const result = await resp.json();
+    input.value = result.label || "";
+    button.textContent = "已保存";
+    showToast("归档备注已更新");
+    window.setTimeout(() => {
+      button.textContent = originalText;
+      button.disabled = false;
+    }, 1200);
+  } catch (error) {
+    button.textContent = originalText;
+    button.disabled = false;
+    showToast("备注保存失败", "error");
+    alert("备注保存失败: " + error.message);
+  }
+}
+
 async function fetchHistory() {
   try {
     const resp = await fetch("/api/list");
@@ -993,7 +1029,12 @@ async function fetchHistory() {
         <td>${formatSaveTime(item.updatedAt)}</td>
         <td>${escapeXml(item.projectName)}</td>
         <td>${escapeXml(item.destination || "-")}</td>
-        <td>${escapeXml(item.label)}</td>
+        <td class="history-label-cell">
+          <div class="history-label-editor">
+            <input class="history-label-input" maxlength="200" value="${escapeXml(item.label || "")}" placeholder="填写归档备注">
+            <button class="history-label-save" type="button" data-update-label-id="${escapeXml(item.id)}">保存</button>
+          </div>
+        </td>
         <td class="history-action-cell">
           <div class="history-actions">
             <button class="history-action-btn load" type="button" title="加载此报价" data-load-id="${item.id}">加载</button>
@@ -1465,6 +1506,11 @@ document.addEventListener("click", (event) => {
   if (deleteID) {
     deleteSnapshot(deleteID, event);
   }
+
+  const updateLabelID = event.target.dataset.updateLabelId;
+  if (updateLabelID) {
+    updateSnapshotLabel(updateLabelID, event);
+  }
 });
 
 $("addCargoBtn").addEventListener("click", addCargo);
@@ -1493,6 +1539,11 @@ $("exportDialog").addEventListener("click", (event) => {
 $("archiveBtn").addEventListener("click", archiveSnapshot);
 $("historyBtn").addEventListener("click", fetchHistory);
 $("closeHistoryBtn").addEventListener("click", () => $("historyDialog").classList.add("hidden"));
+$("historyTable").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !event.target.matches(".history-label-input")) return;
+  event.preventDefault();
+  event.target.closest(".history-label-editor")?.querySelector("[data-update-label-id]")?.click();
+});
 document.querySelectorAll("[data-view]").forEach((button) => {
   button.addEventListener("click", () => setActiveView(button.dataset.view));
 });

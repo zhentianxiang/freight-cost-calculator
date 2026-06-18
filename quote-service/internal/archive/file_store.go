@@ -78,6 +78,22 @@ func (s *FileStore) Delete(id string) error {
 	return os.Remove(s.path(id))
 }
 
+func (s *FileStore) UpdateLabel(id, label string) (quote.Snapshot, error) {
+	data, err := s.Load(id)
+	if err != nil {
+		return quote.Snapshot{}, err
+	}
+	var snap quote.Snapshot
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return quote.Snapshot{}, err
+	}
+	snap.Label = strings.TrimSpace(label)
+	if err := s.Save(snap); err != nil {
+		return quote.Snapshot{}, err
+	}
+	return snap, nil
+}
+
 func (s *FileStore) path(id string) string {
 	return fmt.Sprintf("%s/%s.json", s.Dir, safeID(id))
 }

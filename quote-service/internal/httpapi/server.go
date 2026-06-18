@@ -43,6 +43,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/list", s.handleList)
 	mux.HandleFunc("/api/load", s.handleLoad)
 	mux.HandleFunc("/api/delete", s.handleDelete)
+	mux.HandleFunc("/api/update-label", s.handleUpdateLabel)
 	mux.HandleFunc("/api/pi/export", s.handlePIExport)
 	return s.logRequests(mux)
 }
@@ -139,6 +140,44 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	log.Printf("archive deleted id=%q", id)
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "Deleted")
+}
+
+func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		log.Printf("archive label update rejected invalid_json=true error=%v", err)
+		return
+	}
+	if request.ID == "" {
+		http.Error(w, "Missing ID", http.StatusBadRequest)
+		log.Printf("archive label update rejected missing_id=true")
+		return
+	}
+	if len([]rune(request.Label)) > 200 {
+		http.Error(w, "Label too long", http.StatusBadRequest)
+		log.Printf("archive label update rejected id=%q label_too_long=true", request.ID)
+		return
+	}
+	snap, err := s.store.UpdateLabel(request.ID, request.Label)
+	if err != nil {
+		http.Error(w, "Failed to update label", http.StatusInternalServerError)
+		log.Printf("archive label update failed id=%q error=%v", request.ID, err)
+		return
+	}
+	log.Printf("archive label updated id=%q label=%q", snap.ID, snap.Label)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"label":     snap.Label,
+		"updatedAt": snap.UpdatedAt,
+	})
 }
 
 func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
