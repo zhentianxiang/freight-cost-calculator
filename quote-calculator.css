@@ -208,6 +208,20 @@ h1 {
   font-weight: 700;
 }
 
+.cargo-cost-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.section-helper {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .section-body {
   padding: 16px 18px;
 }
@@ -929,6 +943,12 @@ td select:focus {
 
   .actions {
     justify-content: flex-start;
+  }
+
+  .cargo-cost-actions {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 7px;
   }
 
   .two-panel-form,

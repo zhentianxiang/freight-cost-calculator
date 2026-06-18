@@ -155,7 +155,10 @@
         <section class="section">
           <div class="section-header">
             <h2 class="section-title">货物成本</h2>
-            <button class="btn" id="addCargoBtn" type="button">新增货物</button>
+            <div class="cargo-cost-actions">
+              <span class="section-helper">成本单价RMB填入实际成本价即可，系统会自动计算利润</span>
+              <button class="btn" id="addCargoBtn" type="button">新增货物</button>
+            </div>
           </div>
           <div class="section-body">
             <div class="table-wrap">
@@ -185,7 +188,7 @@
                     <th>宽(cm)</th>
                     <th>单箱KG</th>
                     <th>数量</th>
-                    <th>单价RMB</th>
+                    <th title="填入实际成本价即可，系统会自动计算利润">成本单价RMB</th>
                     <th>税率%</th>
                     <th>税费</th>
                     <th>合计</th>
