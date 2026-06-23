@@ -22,9 +22,11 @@
       </div>
       <div class="actions">
         <button class="btn primary" id="archiveBtn" title="归档到服务器（长期保存）" type="button">保存到归档</button>
+        <button class="btn" id="newQuoteBtn" title="开始一份新的报价，不覆盖已加载归档" type="button">新建报价</button>
         <button class="btn" id="historyBtn" title="查看服务器归档列表" type="button">查看历史</button>
         <button class="btn danger" id="clearBtn" type="button">清空</button>
         <button class="btn" id="mdBtn" type="button">下载MD</button>
+        <button class="btn" id="pdfBtn" type="button">下载PDF</button>
         <button class="btn primary" id="excelBtn" type="button">下载Excel</button>
       </div>
     </header>
@@ -203,6 +205,59 @@
 
         <section class="section">
           <div class="section-header">
+            <div>
+              <h2 class="section-title">港口费用计算</h2>
+              <span class="section-helper">自动按货物总体积/总重量计算 RT，并折算为 RMB 计入最终采用总成本</span>
+            </div>
+            <div class="actions">
+              <button class="btn" id="loadPortExampleBtn" type="button">套用港口示例</button>
+              <button class="btn" id="addPortChargeBtn" type="button">新增费用</button>
+            </div>
+          </div>
+          <div class="section-body">
+            <div class="port-metrics" aria-live="polite">
+              <div class="port-metric"><span>总体积 CBM</span><strong id="cargoVolumeCbm">0.000</strong></div>
+              <div class="port-metric"><span>总重量 TON</span><strong id="cargoWeightTon">0.000</strong></div>
+              <div class="port-metric"><span>计费 RT</span><strong id="cargoChargeRt">0.000</strong></div>
+              <div class="port-metric"><span>港口费合计 RMB</span><strong id="portChargeTotal">¥0</strong></div>
+            </div>
+            <p class="note">RT 通常按总体积 CBM 与总重量吨取大值估算；实际收费以货代/港口账单为准。</p>
+            <div class="table-wrap port-charge-scroll">
+              <table id="portChargeTable">
+                <colgroup>
+                  <col class="port-side">
+                  <col class="port-item">
+                  <col class="port-currency">
+                  <col class="port-unit">
+                  <col class="port-rate">
+                  <col class="port-min">
+                  <col class="port-base">
+                  <col class="port-amount">
+                  <col class="port-included">
+                  <col class="row-action">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>港口</th>
+                    <th>费用项目</th>
+                    <th>币种</th>
+                    <th>计费</th>
+                    <th>单价</th>
+                    <th>最低</th>
+                    <th>基数</th>
+                    <th>折合RMB</th>
+                    <th>计入</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
             <h2 class="section-title">货代费用</h2>
             <div class="selected-scheme-wrap">
                 <label for="selectedScheme">当前编辑</label>
@@ -318,6 +373,7 @@
                   <tr>
                     <th>方案</th>
                     <th>物流费</th>
+                    <th>港口费</th>
                     <th>总成本</th>
                     <th id="summaryQuoteHeader">报价USD</th>
                     <th>净利润</th>

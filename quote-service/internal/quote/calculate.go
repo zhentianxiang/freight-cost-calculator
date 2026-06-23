@@ -6,11 +6,15 @@ func Calculate(snap *Snapshot) CalculationResult {
 	FixDefaults(snap)
 	goodsCost, schemes := CalculateSchemes(snap)
 	selected := bestScheme(schemes)
+	stats := CargoStatsFor(snap.Cargo)
+	portTotals := CalculatePortCharges(snap)
 	return CalculationResult{
-		Inputs:    snap.Inputs,
-		GoodsCost: goodsCost,
-		Schemes:   schemes,
-		Selected:  selected,
+		Inputs:      snap.Inputs,
+		GoodsCost:   goodsCost,
+		CargoStats:  stats,
+		PortCharges: portTotals,
+		Schemes:     schemes,
+		Selected:    selected,
 	}
 }
 
@@ -19,6 +23,7 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 	for _, c := range snap.Cargo {
 		goodsCost += cargoTotal(c)
 	}
+	portTotals := CalculatePortCharges(snap)
 
 	var summaries []SummaryRow
 	for _, s := range summarySchemeIDs(snap) {
@@ -33,7 +38,7 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 			}
 		}
 		importCosts := estimateImportCosts(snap.Inputs, goodsCost, freight)
-		totalCost := goodsCost + freight + importCosts.IncludedTotal
+		totalCost := goodsCost + freight + portTotals.TotalRMB + importCosts.IncludedTotal
 
 		// 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
 		profitRate := snap.Inputs.TargetProfit
@@ -67,6 +72,7 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 		summaries = append(summaries, SummaryRow{
 			Scheme:        s,
 			Freight:       freight,
+			PortCharges:   portTotals.TotalRMB,
 			ImportCosts:   importCosts,
 			TotalCost:     totalCost,
 			TargetPrice:   targetPrice,
@@ -80,6 +86,110 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 		})
 	}
 	return goodsCost, summaries
+}
+
+func CargoStatsFor(cargo []CargoRow) CargoStats {
+	stats := CargoStats{}
+	for _, c := range cargo {
+		qty := c.Qty
+		stats.Qty += qty
+		if c.Length > 0 && c.Height > 0 && c.Width > 0 && qty > 0 {
+			stats.VolumeCBM += c.Length * c.Height * c.Width / 1000000 * qty
+		}
+		if c.Weight > 0 && qty > 0 {
+			stats.WeightKG += c.Weight * qty
+		}
+	}
+	stats.WeightTon = stats.WeightKG / 1000
+	stats.RT = stats.VolumeCBM
+	if stats.WeightTon > stats.RT {
+		stats.RT = stats.WeightTon
+	}
+	return stats
+}
+
+func CalculatePortCharges(snap *Snapshot) PortTotals {
+	stats := CargoStatsFor(snap.Cargo)
+	totals := PortTotals{}
+	for _, row := range snap.PortCharges {
+		if !row.Included || row.Rate == 0 {
+			continue
+		}
+		result := calculatePortChargeRow(row, snap.Inputs, stats)
+		totals.Rows = append(totals.Rows, result)
+		if result.Side == "destination" {
+			totals.DestinationRMB += result.AmountRMB
+		} else {
+			totals.OriginRMB += result.AmountRMB
+		}
+		totals.TotalRMB += result.AmountRMB
+	}
+	return totals
+}
+
+func calculatePortChargeRow(row PortChargeRow, inputs Inputs, stats CargoStats) PortChargeResultRow {
+	unit := strings.ToLower(strings.TrimSpace(row.Unit))
+	base := 1.0
+	switch unit {
+	case "rt":
+		base = stats.RT
+	case "ton":
+		base = stats.WeightTon
+	case "cbm":
+		base = stats.VolumeCBM
+	case "hbl", "票", "fixed", "":
+		base = 1
+	default:
+		base = 1
+	}
+	amount := row.Rate * base
+	if row.Min != 0 && amount < row.Min {
+		amount = row.Min
+	}
+	rate := portExchangeRate(row.Currency, inputs)
+	return PortChargeResultRow{
+		Side:         normalizePortSide(row.Side),
+		Item:         row.Item,
+		Currency:     normalizeCurrency(row.Currency),
+		Unit:         unit,
+		Rate:         row.Rate,
+		Min:          row.Min,
+		Base:         base,
+		Amount:       amount,
+		AmountRMB:    amount * rate,
+		ExchangeRate: rate,
+		Included:     row.Included,
+	}
+}
+
+func normalizePortSide(side string) string {
+	side = strings.ToLower(strings.TrimSpace(side))
+	if side == "destination" || side == "目的港" {
+		return "destination"
+	}
+	return "origin"
+}
+
+func normalizeCurrency(currency string) string {
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if currency == "USD" || currency == "EUR" {
+		return currency
+	}
+	return "RMB"
+}
+
+func portExchangeRate(currency string, inputs Inputs) float64 {
+	switch normalizeCurrency(currency) {
+	case "USD":
+		if inputs.ExchangeRate > 0 {
+			return inputs.ExchangeRate
+		}
+	case "EUR":
+		if inputs.EurExchangeRate > 0 {
+			return inputs.EurExchangeRate
+		}
+	}
+	return 1
 }
 
 func estimateImportCosts(inputs Inputs, goodsCost, freight float64) ImportCosts {

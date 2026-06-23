@@ -76,14 +76,14 @@ func buildInternalMarkdown(snap *Snapshot, lang string) string {
 		lines = append(lines, fmt.Sprintf("|**%s**|**%s**||", tx(lang, "计入费用合计", "Included Cost Total"), fmtMoney(summary.Freight)), "")
 	}
 	lines = append(lines, "## "+tx(lang, "利润测算", "Profit Calculation"), "",
-		fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
-			tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "总成本RMB", "Total Cost RMB"),
+		fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
+			tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "港口费RMB", "Port Charges RMB"), tx(lang, "总成本RMB", "Total Cost RMB"),
 			tx(lang, "报价USD", "Quote USD"), tx(lang, "报价EUR", "Quote EUR"), tx(lang, "最终报价RMB", "Final Quote RMB"),
 			tx(lang, "净利润RMB", "Net Profit RMB"), tx(lang, "净利率", "Net Margin"), tx(lang, "成本加成率", "Markup")),
-		"|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+		"|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, row := range result.Schemes {
-		lines = append(lines, fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
-			freightName(row.Scheme, lang), fmtMoney(row.Freight), fmtMoney(row.TotalCost), fmtMoney(math.Round(row.QuoteUsd)),
+		lines = append(lines, fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
+			freightName(row.Scheme, lang), fmtMoney(row.Freight), fmtMoney(row.PortCharges), fmtMoney(row.TotalCost), fmtMoney(math.Round(row.QuoteUsd)),
 			fmtMoney(math.Round(row.QuoteEur)), fmtMoney(row.QuoteRmb), fmtMoney(row.Profit), fmtPct(row.Margin), fmtPct(row.Markup)))
 	}
 	lines = append(lines, "", fmt.Sprintf("%s：%s，%s %s RMB。",

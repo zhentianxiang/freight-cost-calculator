@@ -34,6 +34,7 @@ type CargoRow struct {
 	TaxRate   float64 `json:"taxRate"`
 	ImageName string  `json:"imageName"`
 	ImageData string  `json:"imageData"`
+	ImageURL  string  `json:"imageUrl"`
 }
 
 type FreightRow struct {
@@ -43,19 +44,31 @@ type FreightRow struct {
 	Included bool    `json:"included"`
 }
 
+type PortChargeRow struct {
+	Side     string  `json:"side"`
+	Item     string  `json:"item"`
+	Currency string  `json:"currency"`
+	Unit     string  `json:"unit"`
+	Rate     float64 `json:"rate"`
+	Min      float64 `json:"min"`
+	Included bool    `json:"included"`
+}
+
 type Snapshot struct {
-	ID        string       `json:"id"`
-	Label     string       `json:"label"`
-	UpdatedAt string       `json:"updatedAt"`
-	Inputs    Inputs       `json:"inputs"`
-	Schemes   []string     `json:"schemes"`
-	Cargo     []CargoRow   `json:"cargo"`
-	Freight   []FreightRow `json:"freight"`
+	ID          string          `json:"id"`
+	Label       string          `json:"label"`
+	UpdatedAt   string          `json:"updatedAt"`
+	Inputs      Inputs          `json:"inputs"`
+	Schemes     []string        `json:"schemes"`
+	Cargo       []CargoRow      `json:"cargo"`
+	Freight     []FreightRow    `json:"freight"`
+	PortCharges []PortChargeRow `json:"portCharges"`
 }
 
 type SummaryRow struct {
 	Scheme        string      `json:"scheme"`
 	Freight       float64     `json:"freight"`
+	PortCharges   float64     `json:"portCharges"`
 	ImportCosts   ImportCosts `json:"importCosts"`
 	TotalCost     float64     `json:"totalCost"`
 	TargetPrice   float64     `json:"targetPrice"`
@@ -80,10 +93,41 @@ type ImportCosts struct {
 }
 
 type CalculationResult struct {
-	Inputs    Inputs       `json:"inputs"`
-	GoodsCost float64      `json:"goodsCost"`
-	Schemes   []SummaryRow `json:"schemes"`
-	Selected  SummaryRow   `json:"selected"`
+	Inputs      Inputs       `json:"inputs"`
+	GoodsCost   float64      `json:"goodsCost"`
+	CargoStats  CargoStats   `json:"cargoStats"`
+	PortCharges PortTotals   `json:"portCharges"`
+	Schemes     []SummaryRow `json:"schemes"`
+	Selected    SummaryRow   `json:"selected"`
+}
+
+type CargoStats struct {
+	VolumeCBM float64 `json:"volumeCbm"`
+	WeightKG  float64 `json:"weightKg"`
+	WeightTon float64 `json:"weightTon"`
+	RT        float64 `json:"rt"`
+	Qty       float64 `json:"qty"`
+}
+
+type PortTotals struct {
+	OriginRMB      float64               `json:"originRmb"`
+	DestinationRMB float64               `json:"destinationRmb"`
+	TotalRMB       float64               `json:"totalRmb"`
+	Rows           []PortChargeResultRow `json:"rows"`
+}
+
+type PortChargeResultRow struct {
+	Side         string  `json:"side"`
+	Item         string  `json:"item"`
+	Currency     string  `json:"currency"`
+	Unit         string  `json:"unit"`
+	Rate         float64 `json:"rate"`
+	Min          float64 `json:"min"`
+	Base         float64 `json:"base"`
+	Amount       float64 `json:"amount"`
+	AmountRMB    float64 `json:"amountRmb"`
+	ExchangeRate float64 `json:"exchangeRate"`
+	Included     bool    `json:"included"`
 }
 
 type Styles struct {

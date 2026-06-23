@@ -386,6 +386,43 @@ textarea:focus {
   overflow: auto;
 }
 
+.port-charge-scroll {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.port-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.port-metric {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fbfcfd;
+  min-width: 0;
+}
+
+.port-metric span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.port-metric strong {
+  display: block;
+  color: var(--primary);
+  font-size: 17px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -473,6 +510,27 @@ table {
   width: 96px;
 }
 
+.port-side {
+  width: 90px;
+}
+
+.port-item {
+  width: 190px;
+}
+
+.port-currency,
+.port-unit,
+.port-included {
+  width: 82px;
+}
+
+.port-rate,
+.port-min,
+.port-base,
+.port-amount {
+  width: 112px;
+}
+
 .row-action {
   width: 44px;
 }
@@ -545,6 +603,12 @@ th {
 }
 
 .freight-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.port-charge-scroll thead th {
   position: sticky;
   top: 0;
   z-index: 2;

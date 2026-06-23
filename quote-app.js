@@ -22,7 +22,8 @@ const state = {
     { scheme: "B货代", item: "报关费", amount: 100, included: true },
     { scheme: "B货代", item: "熏蒸费", amount: 400, included: true },
     { scheme: "B货代", item: "拖车费", amount: 3600, included: true }
-  ]
+  ],
+  portCharges: []
 };
 
 const $ = (id) => document.getElementById(id);
@@ -51,6 +52,7 @@ let lastSavedSignature = "";
 let toastTimer = 0;
 let calculationRequestId = 0;
 let latestCalculationResult = null;
+let currentArchiveId = "";
 
 const piDefaultTerms = `1. This PI becomes binding after buyer's written acceptance and seller's receipt of agreed deposit or full payment.
 2. Production and shipment schedules are counted from the date cleared funds are received in seller's bank account.
@@ -76,6 +78,32 @@ function cargoTotal(row) {
   return cleanNum(row.unitPrice) * cleanNum(row.qty) + cargoTax(row);
 }
 
+function cargoVolumeCbm(row) {
+  const qty = cleanNum(row.qty);
+  const length = cleanNum(row.length);
+  const height = cleanNum(row.height);
+  const width = cleanNum(row.width);
+  if (!qty || !length || !height || !width) return 0;
+  return length * height * width / 1000000 * qty;
+}
+
+function cargoWeightKg(row) {
+  return cleanNum(row.weight) * cleanNum(row.qty);
+}
+
+function cargoStats() {
+  const volumeCbm = state.cargo.reduce((sum, row) => sum + cargoVolumeCbm(row), 0);
+  const weightKg = state.cargo.reduce((sum, row) => sum + cargoWeightKg(row), 0);
+  const weightTon = weightKg / 1000;
+  return {
+    volumeCbm,
+    weightKg,
+    weightTon,
+    rt: Math.max(volumeCbm, weightTon),
+    qty: totalCargoQty()
+  };
+}
+
 function normalizeCargoDimensions(cargo = []) {
   const rowsWithDims = cargo.filter((row) => [row.length, row.height, row.width].some((value) => cleanNum(value) > 0));
   const looksLikeMeters = rowsWithDims.length > 0 && rowsWithDims.every((row) => {
@@ -93,6 +121,43 @@ function normalizeCargoDimensions(cargo = []) {
 
 function totalCargoQty() {
   return state.cargo.reduce((sum, row) => sum + cleanNum(row.qty), 0);
+}
+
+function normalizeCurrency(currency) {
+  return ["USD", "EUR", "RMB"].includes(currency) ? currency : "RMB";
+}
+
+function portExchangeRate(currency) {
+  if (currency === "USD") return cleanNum($("exchangeRate").value) || 1;
+  if (currency === "EUR") return cleanNum($("eurExchangeRate").value) || 1;
+  return 1;
+}
+
+function portChargeBase(row, stats = cargoStats()) {
+  const unit = row.unit || "rt";
+  if (unit === "rt") return stats.rt;
+  if (unit === "ton") return stats.weightTon;
+  if (unit === "cbm") return stats.volumeCbm;
+  return 1;
+}
+
+function portChargeAmount(row, stats = cargoStats()) {
+  if (!row.included) return { base: portChargeBase(row, stats), amount: 0, amountRmb: 0 };
+  const base = portChargeBase(row, stats);
+  let amount = cleanNum(row.rate) * base;
+  const min = cleanNum(row.min);
+  if (min && amount < min) amount = min;
+  const currency = normalizeCurrency(row.currency);
+  return {
+    base,
+    amount,
+    amountRmb: amount * portExchangeRate(currency)
+  };
+}
+
+function portChargeTotals() {
+  const stats = cargoStats();
+  return state.portCharges.reduce((total, row) => total + portChargeAmount(row, stats).amountRmb, 0);
 }
 
 function quoteValueByCurrency(row, currency) {
@@ -247,13 +312,14 @@ function applyInputs(inputs = {}) {
 
 function getSnapshot(label = "自动保存") {
   return {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: currentArchiveId || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     label,
     updatedAt: new Date().toISOString(),
     inputs: getRawInputs(),
     schemes: [...state.schemes],
     cargo: state.cargo.map((row) => ({ ...row })),
-    freight: state.freight.map((row) => ({ ...row }))
+    freight: state.freight.map((row) => ({ ...row })),
+    portCharges: state.portCharges.map((row) => ({ ...row }))
   };
 }
 
@@ -269,11 +335,23 @@ function normalizeSnapshotForServer(snapshot) {
       weight: cleanNum(row.weight),
       qty: cleanNum(row.qty),
       unitPrice: cleanNum(row.unitPrice),
-      taxRate: cleanNum(row.taxRate)
+      taxRate: cleanNum(row.taxRate),
+      imageData: row.imageUrl ? "" : (row.imageData || ""),
+      imageUrl: row.imageUrl || ""
     })),
     freight: state.freight.map((row) => ({
       ...row,
       amount: cleanNum(row.amount),
+      included: Boolean(row.included)
+    })),
+    portCharges: state.portCharges.map((row) => ({
+      ...row,
+      side: row.side || "origin",
+      item: row.item || "",
+      currency: normalizeCurrency(row.currency),
+      unit: row.unit || "rt",
+      rate: cleanNum(row.rate),
+      min: cleanNum(row.min),
       included: Boolean(row.included)
     }))
   };
@@ -284,7 +362,8 @@ function snapshotSignature(snapshot) {
     inputs: snapshot.inputs,
     schemes: snapshot.schemes,
     cargo: snapshot.cargo,
-    freight: snapshot.freight
+    freight: snapshot.freight,
+    portCharges: snapshot.portCharges
   });
 }
 
@@ -324,17 +403,8 @@ function showToast(message, type = "success") {
 
 function loadDraftOnStart() {
   localStorage.removeItem("quote-calculator-cleared");
-  try {
-    const snapshot = JSON.parse(localStorage.getItem(storageDraftKey) || localStorage.getItem("quote-calculator-data") || "null");
-    if (!snapshot) return;
-    applyInputs(snapshot.inputs);
-    state.cargo = Array.isArray(snapshot.cargo) ? normalizeCargoDimensions(snapshot.cargo) : state.cargo;
-    state.freight = Array.isArray(snapshot.freight) ? snapshot.freight : state.freight;
-    state.schemes = Array.isArray(snapshot.schemes) ? snapshot.schemes : getSchemeIds();
-    lastSavedSignature = snapshotSignature(getSnapshot("启动"));
-  } catch (error) {
-    // Keep default template if local storage data is corrupted.
-  }
+  localStorage.removeItem(storageDraftKey);
+  localStorage.removeItem("quote-calculator-data");
 }
 
 function getSchemeIds() {
@@ -388,7 +458,8 @@ function renderCargo() {
   tbody.innerHTML = "";
   state.cargo.forEach((row, index) => {
     const imageLabel = row.imageName ? escapeXml(row.imageName) : "上传";
-    const preview = row.imageData ? `<img class="cargo-thumb" alt="${escapeXml(row.imageName || row.name || "货物图片")}" src="${escapeXml(row.imageData)}">` : "";
+    const imageSrc = row.imageData || row.imageUrl || "";
+    const preview = imageSrc ? `<img class="cargo-thumb" alt="${escapeXml(row.imageName || row.name || "货物图片")}" src="${escapeXml(imageSrc)}">` : "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="cargo-name"><input value="${escapeXml(row.name)}" data-cargo="${index}" data-key="name"></td>
@@ -399,7 +470,7 @@ function renderCargo() {
             <input type="file" accept="image/*" data-image-cargo="${index}">
             <span>${imageLabel}</span>
           </label>
-          ${row.imageData ? `<button class="btn danger small-btn" title="移除图片" type="button" data-remove-image="${index}">×</button>` : ""}
+          ${imageSrc ? `<button class="btn danger small-btn" title="移除图片" type="button" data-remove-image="${index}">×</button>` : ""}
         </div>
       </td>
       <td class="cargo-spec"><input value="${escapeXml(row.spec)}" data-cargo="${index}" data-key="spec"></td>
@@ -416,6 +487,77 @@ function renderCargo() {
     `;
     tbody.appendChild(tr);
   });
+}
+
+const portChargeExamples = [
+  { side: "origin", item: "海运费", currency: "USD", unit: "rt", rate: 170, min: 0, included: true },
+  { side: "origin", item: "ENS", currency: "USD", unit: "hbl", rate: 25, min: 0, included: true },
+  { side: "origin", item: "港杂", currency: "RMB", unit: "rt", rate: 185, min: 0, included: true },
+  { side: "origin", item: "报关", currency: "RMB", unit: "hbl", rate: 100, min: 0, included: true },
+  { side: "destination", item: "UNSTUFFING/RELOADING", currency: "EUR", unit: "ton", rate: 210, min: 210, included: true },
+  { side: "destination", item: "DOC FEE", currency: "EUR", unit: "hbl", rate: 170, min: 0, included: true },
+  { side: "destination", item: "ISPS", currency: "EUR", unit: "hbl", rate: 10, min: 0, included: true },
+  { side: "destination", item: "WHARFAGE", currency: "EUR", unit: "ton", rate: 1.5, min: 3.5, included: true },
+  { side: "destination", item: "LCL CHARGE", currency: "EUR", unit: "rt", rate: 70, min: 70, included: true },
+  { side: "destination", item: "EXCHANGE RATE SURCHARGE", currency: "EUR", unit: "rt", rate: 48, min: 48, included: true }
+];
+
+function renderPortCharges(result) {
+  const stats = result?.cargoStats || cargoStats();
+  $("cargoVolumeCbm").textContent = (stats.volumeCbm || 0).toFixed(3);
+  $("cargoWeightTon").textContent = (stats.weightTon || 0).toFixed(3);
+  $("cargoChargeRt").textContent = (stats.rt || 0).toFixed(3);
+  $("portChargeTotal").textContent = money(result?.portCharges?.totalRmb ?? portChargeTotals());
+
+  const tbody = $("portChargeTable").querySelector("tbody");
+  tbody.innerHTML = "";
+  state.portCharges.forEach((row, index) => {
+    const calc = portChargeAmount(row, stats);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="port-side">
+        <select data-port-charge="${index}" data-key="side">
+          <option value="origin"${row.side !== "destination" ? " selected" : ""}>出发港</option>
+          <option value="destination"${row.side === "destination" ? " selected" : ""}>目的港</option>
+        </select>
+      </td>
+      <td class="port-item"><input value="${escapeXml(row.item || "")}" data-port-charge="${index}" data-key="item" placeholder="费用项目"></td>
+      <td class="port-currency">
+        <select data-port-charge="${index}" data-key="currency">
+          <option value="RMB"${row.currency === "RMB" ? " selected" : ""}>RMB</option>
+          <option value="USD"${row.currency === "USD" ? " selected" : ""}>USD</option>
+          <option value="EUR"${row.currency === "EUR" ? " selected" : ""}>EUR</option>
+        </select>
+      </td>
+      <td class="port-unit">
+        <select data-port-charge="${index}" data-key="unit">
+          <option value="rt"${row.unit === "rt" ? " selected" : ""}>RT</option>
+          <option value="ton"${row.unit === "ton" ? " selected" : ""}>TON</option>
+          <option value="cbm"${row.unit === "cbm" ? " selected" : ""}>CBM</option>
+          <option value="hbl"${row.unit === "hbl" ? " selected" : ""}>HBL</option>
+          <option value="fixed"${row.unit === "fixed" ? " selected" : ""}>固定</option>
+        </select>
+      </td>
+      <td class="port-rate"><input class="num" type="number" step="0.01" value="${row.rate || 0}" data-port-charge="${index}" data-key="rate"></td>
+      <td class="port-min"><input class="num" type="number" step="0.01" value="${row.min || 0}" data-port-charge="${index}" data-key="min"></td>
+      <td class="port-base readonly">${calc.base.toFixed(3)}</td>
+      <td class="port-amount readonly">${money(calc.amountRmb)}</td>
+      <td class="port-included">
+        <select data-port-charge="${index}" data-key="included">
+          <option value="true"${row.included ? " selected" : ""}>是</option>
+          <option value="false"${!row.included ? " selected" : ""}>否</option>
+        </select>
+      </td>
+      <td class="row-action"><button class="btn danger small-btn" type="button" data-delete-port-charge="${index}">×</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (!state.portCharges.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="10" class="readonly" style="text-align:left">暂无港口费用。可点击“新增费用”手动填写，或点击“套用港口示例”。</td>`;
+    tbody.appendChild(tr);
+  }
 }
 
 const baseFreightItems = [
@@ -505,6 +647,7 @@ async function renderSummary() {
   if (!selected) return;
 
   $("termPill").textContent = result.inputs.tradeTerm;
+  renderPortCharges(result);
   renderDestinationCostVisibility(result.inputs.tradeTerm);
   $("selectedSchemePill").textContent = `${selected.scheme} 最优`;
   $("goodsCost").textContent = money(result.goodsCost);
@@ -535,6 +678,7 @@ async function renderSummary() {
     tr.innerHTML = `
       <td>${row.scheme}${row.scheme === selected.scheme ? "（最优）" : ""}</td>
       <td class="money">${fmt.format(row.freight)}</td>
+      <td class="money">${fmt.format(row.portCharges || 0)}</td>
       <td class="money">${fmt.format(row.totalCost)}</td>
       <td class="money">${fmt.format(Math.round(quoteValueByCurrency(row, result.inputs.outputCurrency)))}</td>
       <td class="money">${fmt.format(row.profit)}</td>
@@ -582,6 +726,7 @@ function renderImportCostSummary(inputs, costs = {}) {
 
 function syncAndRender() {
   renderCargo();
+  renderPortCharges();
   renderFreight();
   renderSchemeOptions();
   renderCurrencyConverter();
@@ -612,6 +757,12 @@ function updateStateOnInput(event) {
     if (key === "included") row[key] = target.value === "true";
     else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
     changed = true;
+  } else if (target.matches("[data-port-charge]")) {
+    const row = state.portCharges[Number(target.dataset.portCharge)];
+    const key = target.dataset.key;
+    if (key === "included") row[key] = target.value === "true";
+    else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
+    changed = true;
   } else if (target.id === "tradeTerm") {
     updateFreightDatalist();
     changed = true;
@@ -621,6 +772,7 @@ function updateStateOnInput(event) {
 
   if (changed) {
     renderCurrencyConverter();
+    renderPortCharges();
     renderSummary();
     scheduleAutoSave();
   }
@@ -640,7 +792,6 @@ function updateStateOnChange(event) {
     const row = state.cargo[Number(target.dataset.cargo)];
     const key = target.dataset.key;
     row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
-    renderCargo();
     changed = true;
   } else if (target.matches("[data-freight]")) {
     const row = state.freight[Number(target.dataset.freight)];
@@ -649,19 +800,27 @@ function updateStateOnChange(event) {
     else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
     renderFreight();
     changed = true;
+  } else if (target.matches("[data-port-charge]")) {
+    const row = state.portCharges[Number(target.dataset.portCharge)];
+    const key = target.dataset.key;
+    if (key === "included") row[key] = target.value === "true";
+    else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
+    renderPortCharges();
+    changed = true;
   } else if (target.closest(".section-body") || target.closest(".topbar")) {
     changed = true;
   }
 
   if (changed) {
     renderCurrencyConverter();
+    renderPortCharges();
     renderSummary();
     scheduleAutoSave();
   }
 }
 
 function addCargo() {
-  state.cargo.push({ name: "", spec: "", length: 0, height: 0, width: 0, weight: 0, qty: 1, unitPrice: 0, taxRate: 0, imageName: "", imageData: "" });
+  state.cargo.push({ name: "", spec: "", length: 0, height: 0, width: 0, weight: 0, qty: 1, unitPrice: 0, taxRate: 0, imageName: "", imageData: "", imageUrl: "" });
   syncAndRender();
   scheduleAutoSave();
 }
@@ -671,6 +830,28 @@ function addFreight(scheme) {
   state.freight.push({ scheme: targetScheme, item: "", amount: 0, included: true });
   syncAndRender();
   scheduleAutoSave();
+}
+
+function addPortCharge(row = {}) {
+  state.portCharges.push({
+    side: "origin",
+    item: "",
+    currency: "RMB",
+    unit: "rt",
+    rate: 0,
+    min: 0,
+    included: true,
+    ...row
+  });
+  syncAndRender();
+  scheduleAutoSave();
+}
+
+function loadPortChargeExamples() {
+  state.portCharges = portChargeExamples.map((row) => ({ ...row }));
+  syncAndRender();
+  scheduleAutoSave();
+  showToast("已套用港口费用示例，可继续修改单价和最低收费");
 }
 
 function addFreightScheme() {
@@ -715,6 +896,7 @@ function applyEmptyState() {
   state.schemes = ["A货代"];
   state.cargo = [];
   state.freight = [];
+  state.portCharges = [];
 }
 
 function clearInputFields() {
@@ -767,6 +949,294 @@ function openExportDialog(type) {
 function closeExportDialog() {
   pendingDownloadType = "";
   $("exportDialog").classList.add("hidden");
+}
+
+function exportLabel(lang, zh, en) {
+  if (lang === "en") return en;
+  if (lang === "bilingual") return `${zh} / ${en}`;
+  return zh;
+}
+
+function pdfMoney(value, currency) {
+  return formatQuoteMoney(value || 0, currency || "USD");
+}
+
+function pdfNumber(value) {
+  return fmt.format(Math.round(value || 0));
+}
+
+function pdfCargoSize(row) {
+  const dims = [row.length, row.width, row.height].filter((value) => cleanNum(value) > 0);
+  return dims.length ? `${dims.join(" × ")} cm` : "-";
+}
+
+function quoteDocumentTitle(mode, lang) {
+  const base = mode === "customer"
+    ? exportLabel(lang, "客户报价单", "Quotation")
+    : exportLabel(lang, "内部报价测算", "Internal Quotation");
+  return `${safeName()} - ${base}`;
+}
+
+function buildPdfHtml(snapshot, result, mode, lang) {
+  const inputs = result.inputs || snapshot.inputs || {};
+  const selected = result.selected || (result.schemes || [])[0] || {};
+  const currency = inputs.outputCurrency || "USD";
+  const isCustomer = mode === "customer";
+  const title = quoteDocumentTitle(mode, lang);
+  const termText = `${inputs.tradeTerm || "CFR"} ${inputs.destination || ""}`.trim();
+  const quoteTotal = quoteValueByCurrency(selected, currency);
+  const cargoRows = (snapshot.cargo || []).map((row) => {
+    const qty = cleanNum(row.qty);
+    const customerLine = customerCargoLineByCurrency(row, selected, result.goodsCost, currency);
+    const customerUnit = qty ? customerLine / qty : 0;
+    const cells = isCustomer
+      ? `
+        <td>${escapeXml(row.name || "-")}</td>
+        <td class="image">${row.imageData || row.imageUrl ? `<img src="${escapeXml(row.imageData || row.imageUrl)}" alt="${escapeXml(row.imageName || row.name || "cargo")}">` : ""}</td>
+        <td>${escapeXml(row.spec || "-")}<br><span>${escapeXml(pdfCargoSize(row))}</span></td>
+        <td class="num">${pdfNumber(qty)}</td>
+        <td class="num">${pdfMoney(customerUnit, currency)}</td>
+        <td class="num">${pdfMoney(customerLine, currency)}</td>
+      `
+      : `
+        <td>${escapeXml(row.name || "-")}</td>
+        <td>${escapeXml(row.spec || "-")}<br><span>${escapeXml(pdfCargoSize(row))}</span></td>
+        <td class="num">${pdfNumber(cleanNum(row.weight))}</td>
+        <td class="num">${pdfNumber(qty)}</td>
+        <td class="num">¥${pdfNumber(cleanNum(row.unitPrice))}</td>
+        <td class="num">${pct(cleanNum(row.taxRate))}</td>
+        <td class="num">¥${pdfNumber(cargoTotal(row))}</td>
+        <td class="num">${pdfMoney(customerLine, currency)}</td>
+      `;
+    return `<tr>${cells}</tr>`;
+  }).join("");
+
+  const schemeRows = (result.schemes || []).map((row) => `
+    <tr>
+      <td>${escapeXml(row.scheme || "-")}${row.scheme === selected.scheme ? ` <span class="tag">${escapeXml(exportLabel(lang, "最优", "Best"))}</span>` : ""}</td>
+      <td class="num">¥${pdfNumber(row.freight)}</td>
+      <td class="num">¥${pdfNumber(row.portCharges || 0)}</td>
+      <td class="num">¥${pdfNumber(row.totalCost)}</td>
+      <td class="num">${pdfMoney(quoteValueByCurrency(row, currency), currency)}</td>
+      <td class="num">¥${pdfNumber(row.profit)}</td>
+      <td class="num">${pct(row.margin)}</td>
+    </tr>
+  `).join("");
+
+  const freightRows = (snapshot.freight || [])
+    .filter((row) => !isCustomer && (row.item || cleanNum(row.amount) > 0))
+    .map((row) => `
+      <tr>
+        <td>${escapeXml(row.scheme || "-")}</td>
+        <td>${escapeXml(row.item || "-")}</td>
+        <td class="num">¥${pdfNumber(cleanNum(row.amount))}</td>
+        <td>${escapeXml(row.included ? exportLabel(lang, "是", "Yes") : exportLabel(lang, "否", "No"))}</td>
+      </tr>
+    `).join("");
+
+  const customerNote = getTermNote(inputs.tradeTerm || "CFR");
+  const notes = [customerNote, inputs.notes].filter(Boolean).map((note) => `<p>${escapeXml(note)}</p>`).join("");
+
+  return `<!doctype html>
+<html lang="${lang === "en" ? "en" : "zh-CN"}">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeXml(title)}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #17212b;
+      font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      background: #fff;
+    }
+    .sheet { width: 100%; }
+    .hero {
+      background: #175f78;
+      color: #fff;
+      padding: 18px 20px;
+      border-radius: 10px 10px 0 0;
+    }
+    h1 { margin: 0; font-size: 24px; letter-spacing: .02em; }
+    .subtitle { margin-top: 6px; opacity: .9; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      padding: 14px 0;
+    }
+    .card {
+      border: 1px solid #d8e0e8;
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 64px;
+      break-inside: avoid;
+    }
+    .label { color: #667381; font-size: 11px; }
+    .value { margin-top: 5px; font-size: 16px; font-weight: 800; color: #175f78; }
+    h2 {
+      margin: 18px 0 8px;
+      padding: 8px 10px;
+      border-left: 5px solid #175f78;
+      background: #e7f3f6;
+      font-size: 15px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      page-break-inside: auto;
+    }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    th, td {
+      border: 1px solid #c8d6e0;
+      padding: 7px 8px;
+      vertical-align: middle;
+    }
+    th {
+      background: #dce8ef;
+      color: #17324a;
+      text-align: left;
+      font-weight: 800;
+    }
+    td span { color: #667381; }
+    .num { text-align: right; white-space: nowrap; }
+    .image { width: 82px; text-align: center; }
+    .image img {
+      max-width: 70px;
+      max-height: 58px;
+      object-fit: contain;
+      border-radius: 4px;
+      border: 1px solid #e4eaf0;
+    }
+    .tag {
+      display: inline-block;
+      margin-left: 4px;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: #e8f5ee;
+      color: #1c7c54;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .notes {
+      border: 1px solid #d8e0e8;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #334155;
+      background: #fbfcfd;
+    }
+    .notes p { margin: 4px 0; }
+    .footer {
+      margin-top: 18px;
+      padding-top: 10px;
+      border-top: 1px solid #d8e0e8;
+      color: #667381;
+      font-size: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <section class="hero">
+      <h1>${escapeXml(title)}</h1>
+      <div class="subtitle">${escapeXml(exportLabel(lang, "由 CFR 报价自动计算器生成", "Generated by Freight Cost Calculator"))}</div>
+    </section>
+
+    <section class="summary">
+      <div class="card"><div class="label">${escapeXml(exportLabel(lang, "项目/客户", "Project"))}</div><div class="value">${escapeXml(inputs.projectName || "-")}</div></div>
+      <div class="card"><div class="label">${escapeXml(exportLabel(lang, "贸易术语", "Trade Term"))}</div><div class="value">${escapeXml(termText || "-")}</div></div>
+      <div class="card"><div class="label">${escapeXml(exportLabel(lang, "柜型", "Container"))}</div><div class="value">${escapeXml(inputs.containerType || "-")}</div></div>
+      <div class="card"><div class="label">${escapeXml(exportLabel(lang, "最终报价", "Final Quote"))}</div><div class="value">${escapeXml(pdfMoney(quoteTotal, currency))}</div></div>
+    </section>
+
+    <h2>${escapeXml(exportLabel(lang, "基础信息", "Basic Information"))}</h2>
+    <table>
+      <tbody>
+        <tr><th>${escapeXml(exportLabel(lang, "我方公司", "Company"))}</th><td>${escapeXml(inputs.companyName || "-")}</td><th>${escapeXml(exportLabel(lang, "报价有效期", "Valid Until"))}</th><td>${escapeXml(inputs.validUntil || "-")}</td></tr>
+        <tr><th>${escapeXml(exportLabel(lang, "目的港/目的地", "Destination"))}</th><td>${escapeXml(inputs.destination || "-")}</td><th>${escapeXml(exportLabel(lang, "报价币种", "Currency"))}</th><td>${escapeXml(currency)}</td></tr>
+      </tbody>
+    </table>
+
+    <h2>${escapeXml(exportLabel(lang, "货物明细", "Cargo Details"))}</h2>
+    <table>
+      <thead>
+        <tr>
+          ${isCustomer
+            ? `<th>${escapeXml(exportLabel(lang, "货物名称", "Product"))}</th><th>${escapeXml(exportLabel(lang, "图片", "Image"))}</th><th>${escapeXml(exportLabel(lang, "规格/尺寸", "Spec / Size"))}</th><th class="num">${escapeXml(exportLabel(lang, "数量", "Qty"))}</th><th class="num">${escapeXml(exportLabel(lang, "单价", "Unit Price"))}</th><th class="num">${escapeXml(exportLabel(lang, "金额", "Amount"))}</th>`
+            : `<th>${escapeXml(exportLabel(lang, "货物名称", "Product"))}</th><th>${escapeXml(exportLabel(lang, "规格/尺寸", "Spec / Size"))}</th><th class="num">${escapeXml(exportLabel(lang, "单箱KG", "KG/Box"))}</th><th class="num">${escapeXml(exportLabel(lang, "数量", "Qty"))}</th><th class="num">${escapeXml(exportLabel(lang, "成本单价", "Cost Unit"))}</th><th class="num">${escapeXml(exportLabel(lang, "税率", "Tax"))}</th><th class="num">${escapeXml(exportLabel(lang, "成本合计", "Cost Total"))}</th><th class="num">${escapeXml(exportLabel(lang, "客户金额", "Customer Amount"))}</th>`}
+        </tr>
+      </thead>
+      <tbody>${cargoRows || `<tr><td colspan="${isCustomer ? 6 : 8}">${escapeXml(exportLabel(lang, "暂无货物", "No cargo"))}</td></tr>`}</tbody>
+    </table>
+
+    ${isCustomer ? "" : `
+      <h2>${escapeXml(exportLabel(lang, "方案测算", "Scheme Analysis"))}</h2>
+      <table>
+        <thead><tr><th>${escapeXml(exportLabel(lang, "方案", "Scheme"))}</th><th class="num">${escapeXml(exportLabel(lang, "货代费用", "Freight"))}</th><th class="num">${escapeXml(exportLabel(lang, "港口费", "Port"))}</th><th class="num">${escapeXml(exportLabel(lang, "总成本", "Total Cost"))}</th><th class="num">${escapeXml(exportLabel(lang, "客户报价", "Quote"))}</th><th class="num">${escapeXml(exportLabel(lang, "净利润", "Profit"))}</th><th class="num">${escapeXml(exportLabel(lang, "净利率", "Margin"))}</th></tr></thead>
+        <tbody>${schemeRows}</tbody>
+      </table>
+
+      <h2>${escapeXml(exportLabel(lang, "货代费用明细", "Freight Details"))}</h2>
+      <table>
+        <thead><tr><th>${escapeXml(exportLabel(lang, "方案", "Scheme"))}</th><th>${escapeXml(exportLabel(lang, "费用项目", "Item"))}</th><th class="num">${escapeXml(exportLabel(lang, "金额", "Amount"))}</th><th>${escapeXml(exportLabel(lang, "计入报价", "Included"))}</th></tr></thead>
+        <tbody>${freightRows || `<tr><td colspan="4">${escapeXml(exportLabel(lang, "暂无货代费用", "No freight costs"))}</td></tr>`}</tbody>
+      </table>
+    `}
+
+    <h2>${escapeXml(exportLabel(lang, "报价说明", "Notes"))}</h2>
+    <section class="notes">${notes || `<p>${escapeXml(exportLabel(lang, "无额外备注。", "No additional notes."))}</p>`}</section>
+
+    <section class="footer">
+      <span>${escapeXml(exportLabel(lang, "生成时间", "Generated"))}: ${escapeXml(new Date().toLocaleString("zh-CN"))}</span>
+      <span>${escapeXml(exportLabel(lang, "报价仅供沟通确认，最终以双方确认文件为准。", "Quotation is for confirmation and subject to final agreed documents."))}</span>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+async function downloadPDF(mode, lang, suffix, langSuffix) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("浏览器阻止了PDF导出窗口，请允许弹窗后重试。");
+    return;
+  }
+  printWindow.document.write("<!doctype html><meta charset='utf-8'><title>PDF</title><p style='font:16px sans-serif;padding:24px'>正在生成PDF...</p>");
+  try {
+    const snapshot = normalizeSnapshotForServer(getSnapshot("PDF导出"));
+    const resp = await fetch("/api/quote/calculate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(snapshot),
+    });
+    if (!resp.ok) {
+      const message = await resp.text();
+      throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
+    }
+    const result = await resp.json();
+    const html = buildPdfHtml(snapshot, result, mode, lang);
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onload = () => {
+      printWindow.document.title = `${safeName()}_报价表_${suffix}_${langSuffix}`;
+      window.setTimeout(() => printWindow.print(), 250);
+    };
+    $("statusLine").textContent = `已生成PDF打印页（${suffix}），请选择“保存为PDF”。`;
+  } catch (e) {
+    printWindow.close();
+    $("statusLine").textContent = "PDF导出失败，请确认服务器可用。";
+    alert("PDF导出失败: " + e.message);
+  }
 }
 
 async function downloadExcel(mode, lang, suffix, langSuffix) {
@@ -826,10 +1296,14 @@ async function downloadSelectedVersion(mode) {
   if (pendingDownloadType === "excel") {
     await downloadExcel(mode, lang, suffix, langSuffix);
   }
+  if (pendingDownloadType === "pdf") {
+    await downloadPDF(mode, lang, suffix, langSuffix);
+  }
   closeExportDialog();
 }
 
- function clearAllData() {
+function resetQuoteWorkspace(message = "已新建空白报价。") {
+  currentArchiveId = "";
   clearInputFields();
   applyEmptyState();
   window.clearTimeout(autosaveTimer);
@@ -837,7 +1311,15 @@ async function downloadSelectedVersion(mode) {
   localStorage.removeItem("quote-calculator-data");
   localStorage.removeItem(storageDraftKey);
   syncAndRender();
-  $("statusLine").textContent = "已清空当前数据和本机保存。";
+  $("statusLine").textContent = message;
+}
+
+function clearAllData() {
+  resetQuoteWorkspace("已清空当前报价；不会删除服务器归档。");
+}
+
+function newQuote() {
+  resetQuoteWorkspace("已开始一份新的空白报价；保存时会生成新的归档记录。");
 }
 
 async function fetchUsdCnyRate() {
@@ -884,7 +1366,7 @@ function readImageFile(file) {
     reader.onload = () => {
       image.onerror = reject;
       image.onload = () => {
-        const maxSize = 900;
+        const maxSize = 520;
         const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -893,7 +1375,7 @@ function readImageFile(file) {
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
         resolve({
           imageName: randomImageName(),
-          imageData: canvas.toDataURL("image/jpeg", 0.82)
+          imageData: canvas.toDataURL("image/jpeg", 0.74)
         });
       };
       image.src = reader.result;
@@ -915,23 +1397,42 @@ function randomImageName() {
   return `cargo_${Date.now().toString(36)}_${random}.jpg`;
 }
 
+async function uploadCargoImage(image) {
+  const resp = await fetch("/api/images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: image.imageName,
+      data: image.imageData
+    })
+  });
+  if (!resp.ok) {
+    const message = await resp.text();
+    throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
+  }
+  return resp.json();
+}
+
 async function updateCargoImage(input) {
   const index = Number(input.dataset.imageCargo);
   const file = input.files && input.files[0];
   if (!file || !state.cargo[index]) return;
   try {
     const image = await readImageFile(file);
-    state.cargo[index].imageName = image.imageName;
-    state.cargo[index].imageData = image.imageData;
+    const uploaded = await uploadCargoImage(image);
+    state.cargo[index].imageName = uploaded.name || image.imageName;
+    state.cargo[index].imageData = "";
+    state.cargo[index].imageUrl = uploaded.url || "";
     syncAndRender();
     scheduleAutoSave();
   } catch (error) {
-    alert("图片读取失败，请换一张图片重试。");
+    alert("图片上传失败，请确认服务器可用后重试：" + error.message);
   }
 }
 
 async function archiveSnapshot() {
   const snapshot = normalizeSnapshotForServer(getSnapshot("服务器归档"));
+  const wasUpdating = Boolean(currentArchiveId);
   const button = $("archiveBtn");
   const originalText = button.textContent;
   let saved = false;
@@ -948,10 +1449,10 @@ async function archiveSnapshot() {
       const message = await resp.text();
       throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
     }
-    $("statusLine").textContent = "已成功归档到服务器长期保存。";
     saved = true;
     button.textContent = "已归档";
-    showToast("已保存到归档");
+    showToast(wasUpdating ? "已更新归档" : "已保存到归档");
+    resetQuoteWorkspace(wasUpdating ? "已更新归档，并自动新建空白报价。" : "已保存到归档，并自动新建空白报价。");
     window.setTimeout(() => {
       button.textContent = originalText;
       button.disabled = false;
@@ -1056,14 +1557,16 @@ async function loadSnapshot(id) {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     
+    currentArchiveId = data.id || id;
     applyInputs(data.inputs);
     state.cargo = Array.isArray(data.cargo) ? normalizeCargoDimensions(data.cargo) : state.cargo;
     state.freight = Array.isArray(data.freight) ? data.freight : state.freight;
     state.schemes = Array.isArray(data.schemes) ? data.schemes : getSchemeIds();
+    state.portCharges = Array.isArray(data.portCharges) ? data.portCharges : [];
     
     syncAndRender();
     $("historyDialog").classList.add("hidden");
-    $("statusLine").textContent = `已加载服务器归档: ${data.inputs.projectName} (${formatSaveTime(data.updatedAt)})`;
+    $("statusLine").textContent = `已加载服务器归档: ${data.inputs.projectName} (${formatSaveTime(data.updatedAt)})；保存归档会更新当前记录。`;
   } catch (e) {
     alert("加载失败: " + e.message);
   }
@@ -1470,6 +1973,7 @@ document.addEventListener("click", (event) => {
   const cargoIndex = event.target.dataset.deleteCargo;
   const removeImageIndex = event.target.dataset.removeImage;
   const freightIndex = event.target.dataset.deleteFreight;
+  const portChargeIndex = event.target.dataset.deletePortCharge;
   const piItemIndex = event.target.dataset.deletePiItem;
   if (cargoIndex !== undefined) {
     state.cargo.splice(Number(cargoIndex), 1);
@@ -1481,12 +1985,18 @@ document.addEventListener("click", (event) => {
     if (row) {
       row.imageName = "";
       row.imageData = "";
+      row.imageUrl = "";
       syncAndRender();
       scheduleAutoSave();
     }
   }
   if (freightIndex !== undefined) {
     state.freight.splice(Number(freightIndex), 1);
+    syncAndRender();
+    scheduleAutoSave();
+  }
+  if (portChargeIndex !== undefined) {
+    state.portCharges.splice(Number(portChargeIndex), 1);
     syncAndRender();
     scheduleAutoSave();
   }
@@ -1516,10 +2026,14 @@ document.addEventListener("click", (event) => {
 $("addCargoBtn").addEventListener("click", addCargo);
 $("addFreightSchemeBtn").addEventListener("click", addFreightScheme);
 $("addFreightBtn").addEventListener("click", () => addFreight());
+$("addPortChargeBtn").addEventListener("click", () => addPortCharge());
+$("loadPortExampleBtn").addEventListener("click", loadPortChargeExamples);
 $("fetchRateBtn").addEventListener("click", fetchUsdCnyRate);
 $("policyLookupBtn").addEventListener("click", openPolicyLookup);
 $("clearBtn").addEventListener("click", clearAllData);
+$("newQuoteBtn").addEventListener("click", newQuote);
 $("mdBtn").addEventListener("click", () => openExportDialog("md"));
+$("pdfBtn").addEventListener("click", () => openExportDialog("pdf"));
 $("excelBtn").addEventListener("click", () => openExportDialog("excel"));
 $("saveSchemeBtn").addEventListener("click", saveSchemeName);
 $("cancelSchemeBtn").addEventListener("click", cancelSchemeName);
@@ -1553,6 +2067,6 @@ $("piClearBtn").addEventListener("click", clearPi);
 $("piExportBtn").addEventListener("click", exportPIExcel);
 
 loadDraftOnStart();
-syncAndRender();
+resetQuoteWorkspace("已打开空白报价；可从历史加载归档。");
 if (!loadPiDraft()) initPiDefaults();
 renderPi();

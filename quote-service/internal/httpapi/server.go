@@ -1,11 +1,15 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -44,6 +48,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/load", s.handleLoad)
 	mux.HandleFunc("/api/delete", s.handleDelete)
 	mux.HandleFunc("/api/update-label", s.handleUpdateLabel)
+	mux.HandleFunc("/api/images", s.handleImageUpload)
+	mux.HandleFunc("/api/images/", s.handleImageGet)
 	mux.HandleFunc("/api/pi/export", s.handlePIExport)
 	return s.logRequests(mux)
 }
@@ -202,6 +208,47 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Saved")
 }
 
+func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request struct {
+		Name string `json:"name"`
+		Data string `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		log.Printf("image upload rejected invalid_json=true error=%v", err)
+		return
+	}
+	name, url, err := s.store.SaveImage(request.Name, request.Data)
+	if err != nil {
+		http.Error(w, "Failed to save image", http.StatusBadRequest)
+		log.Printf("image upload failed name=%q error=%v", request.Name, err)
+		return
+	}
+	log.Printf("image uploaded name=%q url=%q", name, url)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"name": name,
+		"url":  url,
+	})
+}
+
+func (s *Server) handleImageGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/api/images/")
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		http.Error(w, "Invalid image name", http.StatusBadRequest)
+		return
+	}
+	http.ServeFile(w, r, s.store.ImagePath(name))
+}
+
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	list, err := s.store.List()
 	if err != nil {
@@ -270,6 +317,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	mode := r.URL.Query().Get("mode")
 	lang := r.URL.Query().Get("lang")
+	s.hydrateCargoImagesForExport(&snap)
 	quote.WriteExcel(f, &snap, mode, lang)
 	log.Printf("excel export generated project=%q mode=%s lang=%s cargo_rows=%d freight_rows=%d",
 		snap.Inputs.ProjectName, mode, lang, len(snap.Cargo), len(snap.Freight))
@@ -279,6 +327,35 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	if err := f.Write(w); err != nil {
 		http.Error(w, "Failed to generate Excel", http.StatusInternalServerError)
 		log.Printf("excel export write failed project=%q error=%v", snap.Inputs.ProjectName, err)
+	}
+}
+
+func (s *Server) hydrateCargoImagesForExport(snap *quote.Snapshot) {
+	for idx := range snap.Cargo {
+		row := &snap.Cargo[idx]
+		if row.ImageData != "" || row.ImageURL == "" {
+			continue
+		}
+		name := filepath.Base(strings.TrimPrefix(row.ImageURL, "/api/images/"))
+		if name == "." || name == "/" || name == "" {
+			continue
+		}
+		data, err := os.ReadFile(s.store.ImagePath(name))
+		if err != nil {
+			log.Printf("excel image hydrate skipped image_url=%q error=%v", row.ImageURL, err)
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(name))
+		mime := "image/jpeg"
+		switch ext {
+		case ".png":
+			mime = "image/png"
+		case ".gif":
+			mime = "image/gif"
+		case ".webp":
+			mime = "image/webp"
+		}
+		row.ImageData = fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(data))
 	}
 }
 

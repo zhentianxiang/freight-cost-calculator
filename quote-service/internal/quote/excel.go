@@ -269,6 +269,7 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		style int
 	}{
 		{tx(lang, "货物总成本", "Total Cargo Cost"), goodsCost, s.MoneyStyle},
+		{tx(lang, "港口费用", "Port Charges"), best.PortCharges, s.MoneyStyle},
 		{tx(lang, "目的国计入费用", "Included Destination Costs"), best.ImportCosts.IncludedTotal, s.MoneyStyle},
 		{fmt.Sprintf("%s(%s)", tx(lang, "最终客户报价", "Final Quote"), inputs.OutputCurrency), quoteValue(best, inputs.OutputCurrency), s.MoneyStyle},
 		{tx(lang, "最终客户报价(USD)", "Final Quote USD"), best.QuoteUsd, s.MoneyStyle},
