@@ -45,13 +45,16 @@ type FreightRow struct {
 }
 
 type PortChargeRow struct {
-	Side     string  `json:"side"`
-	Item     string  `json:"item"`
-	Currency string  `json:"currency"`
-	Unit     string  `json:"unit"`
-	Rate     float64 `json:"rate"`
-	Min      float64 `json:"min"`
-	Included bool    `json:"included"`
+	Side       string  `json:"side"`
+	Item       string  `json:"item"`
+	Currency   string  `json:"currency"`
+	Unit       string  `json:"unit"`
+	Rate       float64 `json:"rate"`
+	AltUnit    string  `json:"altUnit"`
+	AltRate    float64 `json:"altRate"`
+	ChargeMode string  `json:"chargeMode"`
+	Min        float64 `json:"min"`
+	Included   bool    `json:"included"`
 }
 
 type Snapshot struct {
@@ -117,17 +120,23 @@ type PortTotals struct {
 }
 
 type PortChargeResultRow struct {
-	Side         string  `json:"side"`
-	Item         string  `json:"item"`
-	Currency     string  `json:"currency"`
-	Unit         string  `json:"unit"`
-	Rate         float64 `json:"rate"`
-	Min          float64 `json:"min"`
-	Base         float64 `json:"base"`
-	Amount       float64 `json:"amount"`
-	AmountRMB    float64 `json:"amountRmb"`
-	ExchangeRate float64 `json:"exchangeRate"`
-	Included     bool    `json:"included"`
+	Side          string  `json:"side"`
+	Item          string  `json:"item"`
+	Currency      string  `json:"currency"`
+	Unit          string  `json:"unit"`
+	Rate          float64 `json:"rate"`
+	AltUnit       string  `json:"altUnit"`
+	AltRate       float64 `json:"altRate"`
+	ChargeMode    string  `json:"chargeMode"`
+	Min           float64 `json:"min"`
+	Base          float64 `json:"base"`
+	AltBase       float64 `json:"altBase"`
+	Amount        float64 `json:"amount"`
+	PrimaryAmount float64 `json:"primaryAmount"`
+	AltAmount     float64 `json:"altAmount"`
+	AmountRMB     float64 `json:"amountRmb"`
+	ExchangeRate  float64 `json:"exchangeRate"`
+	Included      bool    `json:"included"`
 }
 
 type Styles struct {

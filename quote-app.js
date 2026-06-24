@@ -1,28 +1,7 @@
 const state = {
-  schemes: ["A货代", "B货代"],
-  cargo: [
-    { name: "大理石马", spec: "实际出货尺寸", length: 210, height: 210, width: 50, weight: 2200, qty: 5, unitPrice: 20000, taxRate: 13 },
-    { name: "不锈钢猎鹰", spec: "实际出货尺寸", length: 300, height: 200, width: 80, weight: 500, qty: 1, unitPrice: 40000, taxRate: 0 }
-  ],
-  freight: [
-    { scheme: "A货代", item: "船运费用", amount: 20300, included: true },
-    { scheme: "A货代", item: "保险费", amount: 3500, included: true },
-    { scheme: "A货代", item: "报关费用", amount: 3500, included: true },
-    { scheme: "A货代", item: "港杂费用", amount: 3500, included: true },
-    { scheme: "A货代", item: "送货到港口费用", amount: 6500, included: true },
-    { scheme: "B货代", item: "船运费用", amount: 43910, included: true },
-    { scheme: "B货代", item: "订舱费", amount: 390, included: true },
-    { scheme: "B货代", item: "港杂费", amount: 200, included: true },
-    { scheme: "B货代", item: "文件费", amount: 450, included: true },
-    { scheme: "B货代", item: "THC码头操作费", amount: 986, included: true },
-    { scheme: "B货代", item: "EDI费", amount: 30, included: true },
-    { scheme: "B货代", item: "设备管理费", amount: 100, included: true },
-    { scheme: "B货代", item: "舱单录入费", amount: 100, included: true },
-    { scheme: "B货代", item: "电放费", amount: 450, included: true },
-    { scheme: "B货代", item: "报关费", amount: 100, included: true },
-    { scheme: "B货代", item: "熏蒸费", amount: 400, included: true },
-    { scheme: "B货代", item: "拖车费", amount: 3600, included: true }
-  ],
+  schemes: ["默认"],
+  cargo: [],
+  freight: [],
   portCharges: []
 };
 
@@ -40,7 +19,7 @@ const escapeXml = (value) => String(value ?? "").replace(/[<>&"']/g, (ch) => ({
   "'": "&apos;"
 })[ch]);
 const escapeMd = (value) => String(value ?? "").replace(/\|/g, "\\|");
-const schemeLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const defaultScheme = "默认";
 const storageDraftKey = "quote-calculator-draft";
 const piStorageDraftKey = "pi-invoice-draft-v2";
 const autosaveDelayMs = 3000;
@@ -144,12 +123,23 @@ function portChargeBase(row, stats = cargoStats()) {
 function portChargeAmount(row, stats = cargoStats()) {
   if (!row.included) return { base: portChargeBase(row, stats), amount: 0, amountRmb: 0 };
   const base = portChargeBase(row, stats);
-  let amount = cleanNum(row.rate) * base;
+  const primaryAmount = cleanNum(row.rate) * base;
+  let amount = primaryAmount;
+  let altBase = 0;
+  let altAmount = 0;
+  if (cleanNum(row.altRate) > 0) {
+    altBase = portChargeBase({ unit: row.altUnit || "rt" }, stats);
+    altAmount = cleanNum(row.altRate) * altBase;
+    amount = row.chargeMode === "min" ? Math.min(primaryAmount, altAmount) : Math.max(primaryAmount, altAmount);
+  }
   const min = cleanNum(row.min);
   if (min && amount < min) amount = min;
   const currency = normalizeCurrency(row.currency);
   return {
     base,
+    altBase,
+    primaryAmount,
+    altAmount,
     amount,
     amountRmb: amount * portExchangeRate(currency)
   };
@@ -270,7 +260,7 @@ function getInputs() {
     destinationClearance: cleanNum($("destinationClearance").value),
     destinationOther: cleanNum($("destinationOther").value),
     targetProfit: cleanNum($("targetProfit").value),
-    selectedScheme: $("selectedScheme").value,
+    selectedScheme: defaultScheme,
     notes: $("notes").value.trim()
   };
 }
@@ -294,7 +284,7 @@ function getRawInputs() {
     destinationClearance: $("destinationClearance").value,
     destinationOther: $("destinationOther").value,
     targetProfit: $("targetProfit").value,
-    selectedScheme: $("selectedScheme").value,
+    selectedScheme: defaultScheme,
     notes: $("notes").value
   };
 }
@@ -316,7 +306,7 @@ function getSnapshot(label = "自动保存") {
     label,
     updatedAt: new Date().toISOString(),
     inputs: getRawInputs(),
-    schemes: [...state.schemes],
+    schemes: [defaultScheme],
     cargo: state.cargo.map((row) => ({ ...row })),
     freight: state.freight.map((row) => ({ ...row })),
     portCharges: state.portCharges.map((row) => ({ ...row }))
@@ -341,6 +331,7 @@ function normalizeSnapshotForServer(snapshot) {
     })),
     freight: state.freight.map((row) => ({
       ...row,
+      scheme: defaultScheme,
       amount: cleanNum(row.amount),
       included: Boolean(row.included)
     })),
@@ -351,6 +342,9 @@ function normalizeSnapshotForServer(snapshot) {
       currency: normalizeCurrency(row.currency),
       unit: row.unit || "rt",
       rate: cleanNum(row.rate),
+      altUnit: row.altUnit || "",
+      altRate: cleanNum(row.altRate),
+      chargeMode: row.chargeMode || "max",
       min: cleanNum(row.min),
       included: Boolean(row.included)
     }))
@@ -408,13 +402,7 @@ function loadDraftOnStart() {
 }
 
 function getSchemeIds() {
-  const fromRows = state.freight.map((row) => row.scheme).filter(Boolean);
-  const rowSchemes = [...new Set(fromRows)];
-  if (rowSchemes.length) return rowSchemes;
-
-  const fromState = Array.isArray(state.schemes) ? state.schemes.filter(Boolean) : [];
-  const stateSchemes = [...new Set(fromState)];
-  return stateSchemes.length ? [stateSchemes[0]] : ["A"];
+  return [defaultScheme];
 }
 
 function isMeaningfulFreightRow(row) {
@@ -422,35 +410,18 @@ function isMeaningfulFreightRow(row) {
 }
 
 function getSummarySchemeIds() {
-  const fromRows = state.freight
-    .filter(isMeaningfulFreightRow)
-    .map((row) => row.scheme)
-    .filter(Boolean);
-  const unique = [...new Set(fromRows)];
-  return unique.length ? unique : [getSchemeIds()[0]];
+  return [defaultScheme];
 }
 
 function syncSchemesFromRows() {
-  state.schemes = getSchemeIds();
+  state.schemes = [defaultScheme];
+  state.freight.forEach((row) => {
+    row.scheme = defaultScheme;
+  });
 }
 
 function renderSchemeOptions() {
   syncSchemesFromRows();
-  const select = $("selectedScheme");
-  const current = select.value;
-  select.innerHTML = state.schemes
-    .map((scheme) => `<option value="${escapeXml(scheme)}">${escapeXml(scheme)}</option>`)
-    .join("");
-  select.value = state.schemes.includes(current) ? current : state.schemes[0];
-}
-
-function getNextSchemeId() {
-  const used = new Set(getSchemeIds());
-  const nextLetter = schemeLetters.find((letter) => !used.has(letter));
-  if (nextLetter) return nextLetter;
-  let index = 1;
-  while (used.has(`方案${index}`)) index += 1;
-  return `方案${index}`;
 }
 
 function renderCargo() {
@@ -494,13 +465,17 @@ const portChargeExamples = [
   { side: "origin", item: "ENS", currency: "USD", unit: "hbl", rate: 25, min: 0, included: true },
   { side: "origin", item: "港杂", currency: "RMB", unit: "rt", rate: 185, min: 0, included: true },
   { side: "origin", item: "报关", currency: "RMB", unit: "hbl", rate: 100, min: 0, included: true },
-  { side: "destination", item: "UNSTUFFING/RELOADING", currency: "EUR", unit: "ton", rate: 210, min: 210, included: true },
+  { side: "destination", item: "UNSTUFFING/RELOADING", currency: "EUR", unit: "ton", rate: 210, altUnit: "rt", altRate: 113, chargeMode: "max", min: 210, included: true },
   { side: "destination", item: "DOC FEE", currency: "EUR", unit: "hbl", rate: 170, min: 0, included: true },
   { side: "destination", item: "ISPS", currency: "EUR", unit: "hbl", rate: 10, min: 0, included: true },
   { side: "destination", item: "WHARFAGE", currency: "EUR", unit: "ton", rate: 1.5, min: 3.5, included: true },
   { side: "destination", item: "LCL CHARGE", currency: "EUR", unit: "rt", rate: 70, min: 70, included: true },
   { side: "destination", item: "EXCHANGE RATE SURCHARGE", currency: "EUR", unit: "rt", rate: 48, min: 48, included: true }
 ];
+
+function defaultPortCharges() {
+  return portChargeExamples.map((row) => ({ ...row }));
+}
 
 function renderPortCharges(result) {
   const stats = result?.cargoStats || cargoStats();
@@ -539,8 +514,25 @@ function renderPortCharges(result) {
         </select>
       </td>
       <td class="port-rate"><input class="num" type="number" step="0.01" value="${row.rate || 0}" data-port-charge="${index}" data-key="rate"></td>
+      <td class="port-unit">
+        <select data-port-charge="${index}" data-key="altUnit">
+          <option value=""${!row.altUnit ? " selected" : ""}>无</option>
+          <option value="rt"${row.altUnit === "rt" ? " selected" : ""}>RT</option>
+          <option value="ton"${row.altUnit === "ton" ? " selected" : ""}>TON</option>
+          <option value="cbm"${row.altUnit === "cbm" ? " selected" : ""}>CBM</option>
+          <option value="hbl"${row.altUnit === "hbl" ? " selected" : ""}>HBL</option>
+          <option value="fixed"${row.altUnit === "fixed" ? " selected" : ""}>固定</option>
+        </select>
+      </td>
+      <td class="port-rate"><input class="num" type="number" step="0.01" value="${row.altRate || 0}" data-port-charge="${index}" data-key="altRate"></td>
+      <td class="port-mode">
+        <select data-port-charge="${index}" data-key="chargeMode">
+          <option value="max"${(row.chargeMode || "max") === "max" ? " selected" : ""}>取高</option>
+          <option value="min"${row.chargeMode === "min" ? " selected" : ""}>取低</option>
+        </select>
+      </td>
       <td class="port-min"><input class="num" type="number" step="0.01" value="${row.min || 0}" data-port-charge="${index}" data-key="min"></td>
-      <td class="port-base readonly">${calc.base.toFixed(3)}</td>
+      <td class="port-base readonly">${calc.altAmount ? `${calc.base.toFixed(3)} / ${calc.altBase.toFixed(3)}` : calc.base.toFixed(3)}</td>
       <td class="port-amount readonly">${money(calc.amountRmb)}</td>
       <td class="port-included">
         <select data-port-charge="${index}" data-key="included">
@@ -555,7 +547,7 @@ function renderPortCharges(result) {
 
   if (!state.portCharges.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="10" class="readonly" style="text-align:left">暂无港口费用。可点击“新增费用”手动填写，或点击“套用港口示例”。</td>`;
+    tr.innerHTML = `<td colspan="13" class="readonly" style="text-align:left">暂无港口费用。可点击“新增费用”手动填写，或点击“套用港口示例”。</td>`;
     tbody.appendChild(tr);
   }
 }
@@ -584,19 +576,12 @@ function updateFreightDatalist() {
 function renderFreight() {
   syncSchemesFromRows();
   updateFreightDatalist();
-  const schemeOptions = state.schemes
-    .map((scheme) => `<option value="${escapeXml(scheme)}">${escapeXml(scheme)}</option>`)
-    .join("");
   const tbody = $("freightTable").querySelector("tbody");
   tbody.innerHTML = "";
   state.freight.forEach((row, index) => {
+    row.scheme = defaultScheme;
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="freight-scheme">
-        <select data-freight="${index}" data-key="scheme">
-          ${schemeOptions}
-        </select>
-      </td>
       <td class="freight-item"><input list="freightItemList" value="${escapeXml(row.item)}" data-freight="${index}" data-key="item"></td>
       <td class="freight-amount"><input class="num" type="number" step="1" value="${row.amount}" data-freight="${index}" data-key="amount"></td>
       <td class="freight-included">
@@ -623,7 +608,6 @@ function renderFreight() {
       delete this._tempVal;
     });
 
-    tr.querySelector("[data-key='scheme']").value = row.scheme;
     tbody.appendChild(tr);
   });
 }
@@ -649,7 +633,7 @@ async function renderSummary() {
   $("termPill").textContent = result.inputs.tradeTerm;
   renderPortCharges(result);
   renderDestinationCostVisibility(result.inputs.tradeTerm);
-  $("selectedSchemePill").textContent = `${selected.scheme} 最优`;
+  $("selectedSchemePill").textContent = "单一成本";
   $("goodsCost").textContent = money(result.goodsCost);
   $("goodsCostMeta").textContent = goodsCostMetaText();
   renderImportCostSummary(result.inputs, selected.importCosts);
@@ -676,7 +660,6 @@ async function renderSummary() {
   result.schemes.forEach((row) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${row.scheme}${row.scheme === selected.scheme ? "（最优）" : ""}</td>
       <td class="money">${fmt.format(row.freight)}</td>
       <td class="money">${fmt.format(row.portCharges || 0)}</td>
       <td class="money">${fmt.format(row.totalCost)}</td>
@@ -695,7 +678,7 @@ function renderDestinationCostVisibility(term = $("tradeTerm").value) {
 }
 
 function getTermNote(term) {
-  if (term === "FOB") return "FOB通常不包含国际海运费；如货代费用里计入了海运费，需改为不计入或改用CFR/CIF口径。";
+  if (term === "FOB") return "FOB通常不包含国际海运费；如其他费用里计入了海运费，需改为不计入或改用CFR/CIF口径。";
   if (term === "CIF") return "CIF通常包含国际海运费和保险费；请确认保险费已在费用表中计入。";
   if (term === "DAP") return "DAP通常包含运输至买方指定地点的派送费，但不包含进口清关、进口关税和进口税费。";
   if (term === "DDP") return "DDP通常包含运输至指定地点、进口清关、进口关税及进口税费；税率需以目的国官方政策或货代确认为准。";
@@ -825,9 +808,8 @@ function addCargo() {
   scheduleAutoSave();
 }
 
-function addFreight(scheme) {
-  const targetScheme = scheme || $("selectedScheme").value || getSchemeIds()[0];
-  state.freight.push({ scheme: targetScheme, item: "", amount: 0, included: true });
+function addFreight() {
+  state.freight.push({ scheme: defaultScheme, item: "", amount: 0, included: true });
   syncAndRender();
   scheduleAutoSave();
 }
@@ -839,6 +821,9 @@ function addPortCharge(row = {}) {
     currency: "RMB",
     unit: "rt",
     rate: 0,
+    altUnit: "",
+    altRate: 0,
+    chargeMode: "max",
     min: 0,
     included: true,
     ...row
@@ -848,55 +833,17 @@ function addPortCharge(row = {}) {
 }
 
 function loadPortChargeExamples() {
-  state.portCharges = portChargeExamples.map((row) => ({ ...row }));
+  state.portCharges = defaultPortCharges();
   syncAndRender();
   scheduleAutoSave();
   showToast("已套用港口费用示例，可继续修改单价和最低收费");
 }
 
-function addFreightScheme() {
-  const defaultName = getNextSchemeId();
-  $("schemeNameInput").value = defaultName;
-  $("schemeError").classList.add("hidden");
-  $("schemePromptDialog").classList.remove("hidden");
-  setTimeout(() => {
-    const input = $("schemeNameInput");
-    input.focus();
-    input.select();
-  }, 50);
-}
-
-function saveSchemeName() {
-  const name = $("schemeNameInput").value.trim();
-  if (!name) {
-    $("schemeError").textContent = "方案名称不能为空。";
-    $("schemeError").classList.remove("hidden");
-    return;
-  }
-  if (state.schemes.includes(name)) {
-    $("schemeError").textContent = "该名称已存在，请使用其他名称。";
-    $("schemeError").classList.remove("hidden");
-    return;
-  }
-  const scheme = name;
-  state.schemes.push(scheme);
-  state.freight.push({ scheme, item: "", amount: 0, included: true });
-  syncAndRender();
-  $("selectedScheme").value = scheme;
-  renderSummary();
-  scheduleAutoSave();
-  $("schemePromptDialog").classList.add("hidden");
-}
-
-function cancelSchemeName() {
-  $("schemePromptDialog").classList.add("hidden");
-}
-
 function applyEmptyState() {
-  state.schemes = ["A货代"];
+  state.schemes = [defaultScheme];
   state.cargo = [];
   state.freight = [];
-  state.portCharges = [];
+  state.portCharges = defaultPortCharges();
 }
 
 function clearInputFields() {
@@ -1011,23 +958,21 @@ function buildPdfHtml(snapshot, result, mode, lang) {
     return `<tr>${cells}</tr>`;
   }).join("");
 
-  const schemeRows = (result.schemes || []).map((row) => `
+  const costRows = selected ? `
     <tr>
-      <td>${escapeXml(row.scheme || "-")}${row.scheme === selected.scheme ? ` <span class="tag">${escapeXml(exportLabel(lang, "最优", "Best"))}</span>` : ""}</td>
-      <td class="num">¥${pdfNumber(row.freight)}</td>
-      <td class="num">¥${pdfNumber(row.portCharges || 0)}</td>
-      <td class="num">¥${pdfNumber(row.totalCost)}</td>
-      <td class="num">${pdfMoney(quoteValueByCurrency(row, currency), currency)}</td>
-      <td class="num">¥${pdfNumber(row.profit)}</td>
-      <td class="num">${pct(row.margin)}</td>
+      <td class="num">¥${pdfNumber(selected.freight)}</td>
+      <td class="num">¥${pdfNumber(selected.portCharges || 0)}</td>
+      <td class="num">¥${pdfNumber(selected.totalCost)}</td>
+      <td class="num">${pdfMoney(quoteValueByCurrency(selected, currency), currency)}</td>
+      <td class="num">¥${pdfNumber(selected.profit)}</td>
+      <td class="num">${pct(selected.margin)}</td>
     </tr>
-  `).join("");
+  ` : "";
 
   const freightRows = (snapshot.freight || [])
     .filter((row) => !isCustomer && (row.item || cleanNum(row.amount) > 0))
     .map((row) => `
       <tr>
-        <td>${escapeXml(row.scheme || "-")}</td>
         <td>${escapeXml(row.item || "-")}</td>
         <td class="num">¥${pdfNumber(cleanNum(row.amount))}</td>
         <td>${escapeXml(row.included ? exportLabel(lang, "是", "Yes") : exportLabel(lang, "否", "No"))}</td>
@@ -1142,6 +1087,11 @@ function buildPdfHtml(snapshot, result, mode, lang) {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
+  <script>
+    window.addEventListener("load", () => {
+      window.setTimeout(() => window.print(), 250);
+    });
+  </script>
 </head>
 <body>
   <main class="sheet">
@@ -1178,16 +1128,16 @@ function buildPdfHtml(snapshot, result, mode, lang) {
     </table>
 
     ${isCustomer ? "" : `
-      <h2>${escapeXml(exportLabel(lang, "方案测算", "Scheme Analysis"))}</h2>
+      <h2>${escapeXml(exportLabel(lang, "成本构成", "Cost Breakdown"))}</h2>
       <table>
-        <thead><tr><th>${escapeXml(exportLabel(lang, "方案", "Scheme"))}</th><th class="num">${escapeXml(exportLabel(lang, "货代费用", "Freight"))}</th><th class="num">${escapeXml(exportLabel(lang, "港口费", "Port"))}</th><th class="num">${escapeXml(exportLabel(lang, "总成本", "Total Cost"))}</th><th class="num">${escapeXml(exportLabel(lang, "客户报价", "Quote"))}</th><th class="num">${escapeXml(exportLabel(lang, "净利润", "Profit"))}</th><th class="num">${escapeXml(exportLabel(lang, "净利率", "Margin"))}</th></tr></thead>
-        <tbody>${schemeRows}</tbody>
+        <thead><tr><th class="num">${escapeXml(exportLabel(lang, "其他费用", "Other"))}</th><th class="num">${escapeXml(exportLabel(lang, "港口费", "Port"))}</th><th class="num">${escapeXml(exportLabel(lang, "总成本", "Total Cost"))}</th><th class="num">${escapeXml(exportLabel(lang, "客户报价", "Quote"))}</th><th class="num">${escapeXml(exportLabel(lang, "净利润", "Profit"))}</th><th class="num">${escapeXml(exportLabel(lang, "净利率", "Margin"))}</th></tr></thead>
+        <tbody>${costRows}</tbody>
       </table>
 
-      <h2>${escapeXml(exportLabel(lang, "货代费用明细", "Freight Details"))}</h2>
+      <h2>${escapeXml(exportLabel(lang, "其他费用明细", "Other Cost Details"))}</h2>
       <table>
-        <thead><tr><th>${escapeXml(exportLabel(lang, "方案", "Scheme"))}</th><th>${escapeXml(exportLabel(lang, "费用项目", "Item"))}</th><th class="num">${escapeXml(exportLabel(lang, "金额", "Amount"))}</th><th>${escapeXml(exportLabel(lang, "计入报价", "Included"))}</th></tr></thead>
-        <tbody>${freightRows || `<tr><td colspan="4">${escapeXml(exportLabel(lang, "暂无货代费用", "No freight costs"))}</td></tr>`}</tbody>
+        <thead><tr><th>${escapeXml(exportLabel(lang, "费用项目", "Item"))}</th><th class="num">${escapeXml(exportLabel(lang, "金额", "Amount"))}</th><th>${escapeXml(exportLabel(lang, "计入总成本", "Included"))}</th></tr></thead>
+        <tbody>${freightRows || `<tr><td colspan="3">${escapeXml(exportLabel(lang, "暂无其他费用", "No other costs"))}</td></tr>`}</tbody>
       </table>
     `}
 
@@ -1223,14 +1173,9 @@ async function downloadPDF(mode, lang, suffix, langSuffix) {
     }
     const result = await resp.json();
     const html = buildPdfHtml(snapshot, result, mode, lang);
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.onload = () => {
-      printWindow.document.title = `${safeName()}_报价表_${suffix}_${langSuffix}`;
-      window.setTimeout(() => printWindow.print(), 250);
-    };
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    printWindow.location.replace(blobUrl);
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     $("statusLine").textContent = `已生成PDF打印页（${suffix}），请选择“保存为PDF”。`;
   } catch (e) {
     printWindow.close();
@@ -1430,6 +1375,38 @@ async function updateCargoImage(input) {
   }
 }
 
+async function migrateLegacyCargoImages(cargo = []) {
+  let migrated = 0;
+  for (const row of cargo) {
+    if (!row || row.imageUrl || !row.imageData) continue;
+    try {
+      const uploaded = await uploadCargoImage({
+        imageName: row.imageName || randomImageName(),
+        imageData: row.imageData
+      });
+      row.imageName = uploaded.name || row.imageName || "";
+      row.imageUrl = uploaded.url || "";
+      row.imageData = "";
+      migrated += 1;
+    } catch (error) {
+      // Keep the legacy base64 image as a fallback if migration fails.
+      console.warn("Legacy image migration failed", error);
+    }
+  }
+  return migrated;
+}
+
+async function saveCurrentArchiveQuietly(label = "图片迁移") {
+  if (!currentArchiveId) return;
+  const snapshot = normalizeSnapshotForServer(getSnapshot(label));
+  const resp = await fetch("/api/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(snapshot),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+}
+
 async function archiveSnapshot() {
   const snapshot = normalizeSnapshotForServer(getSnapshot("服务器归档"));
   const wasUpdating = Boolean(currentArchiveId);
@@ -1553,22 +1530,42 @@ async function fetchHistory() {
 
 async function loadSnapshot(id) {
   try {
+    $("statusLine").textContent = "正在加载归档...";
+    const loadButton = document.querySelector(`[data-load-id="${CSS.escape(id)}"]`);
+    if (loadButton) {
+      loadButton.disabled = true;
+      loadButton.textContent = "加载中";
+    }
     const resp = await fetch(`/api/load?id=${id}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     
     currentArchiveId = data.id || id;
     applyInputs(data.inputs);
-    state.cargo = Array.isArray(data.cargo) ? normalizeCargoDimensions(data.cargo) : state.cargo;
-    state.freight = Array.isArray(data.freight) ? data.freight : state.freight;
-    state.schemes = Array.isArray(data.schemes) ? data.schemes : getSchemeIds();
+    const loadedCargo = Array.isArray(data.cargo) ? normalizeCargoDimensions(data.cargo) : state.cargo;
+    const migratedImages = await migrateLegacyCargoImages(loadedCargo);
+    state.cargo = loadedCargo;
+    state.freight = Array.isArray(data.freight) ? data.freight.map((row) => ({ ...row, scheme: defaultScheme })) : state.freight;
+    state.schemes = [defaultScheme];
     state.portCharges = Array.isArray(data.portCharges) ? data.portCharges : [];
     
     syncAndRender();
     $("historyDialog").classList.add("hidden");
-    $("statusLine").textContent = `已加载服务器归档: ${data.inputs.projectName} (${formatSaveTime(data.updatedAt)})；保存归档会更新当前记录。`;
+    if (migratedImages) {
+      try {
+        await saveCurrentArchiveQuietly("旧图片迁移");
+      } catch (error) {
+        console.warn("Failed to save migrated archive", error);
+      }
+    }
+    $("statusLine").textContent = `已加载服务器归档: ${data.inputs.projectName} (${formatSaveTime(data.updatedAt)})；${migratedImages ? `已迁移 ${migratedImages} 张旧图片，` : ""}保存归档会更新当前记录。`;
   } catch (e) {
     alert("加载失败: " + e.message);
+  } finally {
+    document.querySelectorAll("[data-load-id]").forEach((button) => {
+      button.disabled = false;
+      button.textContent = "加载";
+    });
   }
 }
 
@@ -2024,7 +2021,6 @@ document.addEventListener("click", (event) => {
 });
 
 $("addCargoBtn").addEventListener("click", addCargo);
-$("addFreightSchemeBtn").addEventListener("click", addFreightScheme);
 $("addFreightBtn").addEventListener("click", () => addFreight());
 $("addPortChargeBtn").addEventListener("click", () => addPortCharge());
 $("loadPortExampleBtn").addEventListener("click", loadPortChargeExamples);
@@ -2035,14 +2031,6 @@ $("newQuoteBtn").addEventListener("click", newQuote);
 $("mdBtn").addEventListener("click", () => openExportDialog("md"));
 $("pdfBtn").addEventListener("click", () => openExportDialog("pdf"));
 $("excelBtn").addEventListener("click", () => openExportDialog("excel"));
-$("saveSchemeBtn").addEventListener("click", saveSchemeName);
-$("cancelSchemeBtn").addEventListener("click", cancelSchemeName);
-$("schemePromptDialog").addEventListener("click", (event) => {
-  if (event.target.id === "schemePromptDialog") cancelSchemeName();
-});
-$("schemeNameInput").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") saveSchemeName();
-});
 $("cancelExportBtn").addEventListener("click", closeExportDialog);
 $("exportDialog").addEventListener("click", (event) => {
   if (event.target.id === "exportDialog") closeExportDialog();

@@ -284,8 +284,7 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		row++
 	}
 
-	bestMsg := fmt.Sprintf("%s: %s | %s: %s / %s: %s",
-		tx(lang, "推荐方案", "Best Option"), freightName(best.Scheme, lang),
+	bestMsg := fmt.Sprintf("%s: %s / %s: %s",
 		tx(lang, "总成本", "Total Cost"), fmtMoney(best.TotalCost),
 		tx(lang, "净利润", "Net Profit"), fmtMoney(best.Profit))
 	setVal(f, sheet1, fmt.Sprintf("A%d", row), bestMsg, s.HighlightStyle)
@@ -350,23 +349,17 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	}
 	row++
 
-	// 5. 详细货代费用拆解
-	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "货代费用明细", "Freight Itemization"), s.SectionTitleStyle)
+	// 5. 其他费用拆解
+	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "其他费用明细", "Other Cost Itemization"), s.SectionTitleStyle)
 	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
 	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SectionTitleStyle)
 	row++
 
-	for _, scheme := range snap.Schemes {
-		// 方案子标题
-		setVal(f, sheet1, fmt.Sprintf("A%d", row), freightName(scheme, lang), s.SubHeaderStyle)
-		f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
-		f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SubHeaderStyle)
-		row++
-
-		schemeItems := filterFreight(snap.Freight, scheme)
+	{
+		schemeItems := snap.Freight
 		setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "费用项目", "Item"), s.HeaderStyle)
 		setVal(f, sheet1, fmt.Sprintf("B%d", row), tx(lang, "金额RMB", "Amount"), s.HeaderStyle)
-		setVal(f, sheet1, fmt.Sprintf("C%d", row), tx(lang, "计入报价", "Included"), s.HeaderStyle)
+		setVal(f, sheet1, fmt.Sprintf("C%d", row), tx(lang, "计入总成本", "Included"), s.HeaderStyle)
 		f.MergeCell(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("N%d", row))
 		f.SetCellStyle(sheet1, fmt.Sprintf("C%d", row), fmt.Sprintf("N%d", row), s.HeaderStyle)
 		row++
@@ -382,15 +375,15 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 		row++
 	}
 
-	// 6. 方案最终对比
-	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "方案最终对比", "Final Comparison"), s.SectionTitleStyle)
+	// 6. 成本构成
+	setVal(f, sheet1, fmt.Sprintf("A%d", row), tx(lang, "成本构成", "Cost Breakdown"), s.SectionTitleStyle)
 	f.MergeCell(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row))
 	f.SetCellStyle(sheet1, fmt.Sprintf("A%d", row), fmt.Sprintf("N%d", row), s.SectionTitleStyle)
 	row++
 
 	compHeaders := []string{
-		tx(lang, "方案", "Option"),
-		tx(lang, "物流总费", "Logistics"),
+		tx(lang, "其他费用", "Other Costs"),
+		tx(lang, "港口费用", "Port Charges"),
 		tx(lang, "总成本", "Total Cost"),
 		tx(lang, "报价USD", "Quote USD"),
 		tx(lang, "报价EUR", "Quote EUR"),
@@ -406,15 +399,15 @@ func writeInternal(f *excelize.File, snap *Snapshot, lang string, s *Styles) {
 	row++
 
 	for _, summ := range summaries {
-		isBest := summ.Scheme == best.Scheme
+		isBest := true
 		st := s.DataStyle
 		mst := s.MoneyStyle
 		if isBest {
 			st = s.HighlightStyle
 			mst = s.HighlightStyle
 		}
-		setVal(f, sheet1, fmt.Sprintf("A%d", row), freightName(summ.Scheme, lang), st)
-		setMoney(f, sheet1, fmt.Sprintf("B%d", row), summ.Freight, mst)
+		setMoney(f, sheet1, fmt.Sprintf("A%d", row), summ.Freight, mst)
+		setMoney(f, sheet1, fmt.Sprintf("B%d", row), summ.PortCharges, mst)
 		setMoney(f, sheet1, fmt.Sprintf("C%d", row), summ.TotalCost, mst)
 		setMoney(f, sheet1, fmt.Sprintf("D%d", row), summ.QuoteUsd, mst)
 		setMoney(f, sheet1, fmt.Sprintf("E%d", row), summ.QuoteEur, mst)

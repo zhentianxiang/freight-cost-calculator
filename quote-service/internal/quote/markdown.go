@@ -2,7 +2,6 @@ package quote
 
 import (
 	"fmt"
-	"math"
 	"strings"
 )
 
@@ -63,31 +62,23 @@ func buildInternalMarkdown(snap *Snapshot, lang string) string {
 	}
 	lines = append(lines, fmt.Sprintf("|**%s**|||||||||||**%s**||**%s**|",
 		tx(lang, "货物总成本", "Total Cargo Cost"), fmtMoney(result.GoodsCost), fmtMoney(quoteValue(selected, inputs.OutputCurrency))),
-		"", "## "+tx(lang, "货代费用", "Freight Forwarder Cost"), "")
-	for _, summary := range result.Schemes {
-		lines = append(lines, "### "+freightName(summary.Scheme, lang), "",
-			fmt.Sprintf("|%s|%s|%s|", tx(lang, "费用项目", "Cost Item"), tx(lang, "金额RMB", "Amount RMB"), tx(lang, "计入报价", "Included")),
-			"|---|---:|---|")
-		for _, row := range snap.Freight {
-			if row.Scheme == summary.Scheme {
-				lines = append(lines, fmt.Sprintf("|%s|%s|%s|", escapeMd(row.Item), fmtMoney(row.Amount), yesNo(row.Included, lang)))
-			}
-		}
-		lines = append(lines, fmt.Sprintf("|**%s**|**%s**||", tx(lang, "计入费用合计", "Included Cost Total"), fmtMoney(summary.Freight)), "")
+		"", "## "+tx(lang, "其他费用", "Other Costs"), "",
+		fmt.Sprintf("|%s|%s|%s|", tx(lang, "费用项目", "Cost Item"), tx(lang, "金额RMB", "Amount RMB"), tx(lang, "计入总成本", "Included")),
+		"|---|---:|---|")
+	for _, row := range snap.Freight {
+		lines = append(lines, fmt.Sprintf("|%s|%s|%s|", escapeMd(row.Item), fmtMoney(row.Amount), yesNo(row.Included, lang)))
 	}
+	lines = append(lines, fmt.Sprintf("|**%s**|**%s**||", tx(lang, "计入费用合计", "Included Cost Total"), fmtMoney(selected.Freight)), "")
 	lines = append(lines, "## "+tx(lang, "利润测算", "Profit Calculation"), "",
-		fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
-			tx(lang, "方案", "Option"), tx(lang, "物流费RMB", "Logistics RMB"), tx(lang, "港口费RMB", "Port Charges RMB"), tx(lang, "总成本RMB", "Total Cost RMB"),
+		fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
+			tx(lang, "其他费用RMB", "Other Costs RMB"), tx(lang, "港口费RMB", "Port Charges RMB"), tx(lang, "总成本RMB", "Total Cost RMB"),
 			tx(lang, "报价USD", "Quote USD"), tx(lang, "报价EUR", "Quote EUR"), tx(lang, "最终报价RMB", "Final Quote RMB"),
 			tx(lang, "净利润RMB", "Net Profit RMB"), tx(lang, "净利率", "Net Margin"), tx(lang, "成本加成率", "Markup")),
-		"|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
-	for _, row := range result.Schemes {
-		lines = append(lines, fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
-			freightName(row.Scheme, lang), fmtMoney(row.Freight), fmtMoney(row.PortCharges), fmtMoney(row.TotalCost), fmtMoney(math.Round(row.QuoteUsd)),
-			fmtMoney(math.Round(row.QuoteEur)), fmtMoney(row.QuoteRmb), fmtMoney(row.Profit), fmtPct(row.Margin), fmtPct(row.Markup)))
-	}
-	lines = append(lines, "", fmt.Sprintf("%s：%s，%s %s RMB。",
-		tx(lang, "自动推荐方案", "Recommended option"), freightName(selected.Scheme, lang),
+		"|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+	lines = append(lines, fmt.Sprintf("|%s|%s|%s|%s|%s|%s|%s|%s|%s|",
+		fmtMoney(selected.Freight), fmtMoney(selected.PortCharges), fmtMoney(selected.TotalCost), fmtMoney(selected.QuoteUsd),
+		fmtMoney(selected.QuoteEur), fmtMoney(selected.QuoteRmb), fmtMoney(selected.Profit), fmtPct(selected.Margin), fmtPct(selected.Markup)))
+	lines = append(lines, "", fmt.Sprintf("%s %s RMB。",
 		tx(lang, "预计净利润", "Estimated net profit"), fmtMoney(selected.Profit)))
 	if inputs.Notes != "" {
 		lines = append(lines, "", "## "+tx(lang, "备注", "Notes"), "", inputs.Notes)

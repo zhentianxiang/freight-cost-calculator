@@ -25,67 +25,63 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 	}
 	portTotals := CalculatePortCharges(snap)
 
-	var summaries []SummaryRow
-	for _, s := range summarySchemeIDs(snap) {
-		freight := 0.0
-		hasQuotedCost := false
-		for _, f := range snap.Freight {
-			if f.Scheme == s && f.Included {
-				freight += f.Amount
-				if f.Amount > 0 {
-					hasQuotedCost = true
-				}
+	freight := 0.0
+	hasQuotedCost := false
+	for _, f := range snap.Freight {
+		if f.Included {
+			freight += f.Amount
+			if f.Amount > 0 {
+				hasQuotedCost = true
 			}
 		}
-		importCosts := estimateImportCosts(snap.Inputs, goodsCost, freight)
-		totalCost := goodsCost + freight + portTotals.TotalRMB + importCosts.IncludedTotal
-
-		// 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
-		profitRate := snap.Inputs.TargetProfit
-		divisor := 1 - profitRate/100
-		quoteRmb := 0.0
-		if divisor > 0.01 {
-			quoteRmb = totalCost / divisor
-		} else {
-			quoteRmb = totalCost * (1 + profitRate/100)
-		}
-		quoteUsd := 0.0
-		if snap.Inputs.ExchangeRate > 0 {
-			quoteUsd = quoteRmb / snap.Inputs.ExchangeRate
-		}
-		quoteEur := 0.0
-		if snap.Inputs.EurExchangeRate > 0 {
-			quoteEur = quoteRmb / snap.Inputs.EurExchangeRate
-		}
-
-		targetPrice := quoteRmb
-		profit := quoteRmb - totalCost
-		margin := 0.0
-		if quoteRmb > 0 {
-			margin = (profit / quoteRmb) * 100
-		}
-		markup := 0.0
-		if totalCost > 0 {
-			markup = (profit / totalCost) * 100
-		}
-
-		summaries = append(summaries, SummaryRow{
-			Scheme:        s,
-			Freight:       freight,
-			PortCharges:   portTotals.TotalRMB,
-			ImportCosts:   importCosts,
-			TotalCost:     totalCost,
-			TargetPrice:   targetPrice,
-			QuoteUsd:      quoteUsd,
-			QuoteEur:      quoteEur,
-			QuoteRmb:      quoteRmb,
-			Profit:        profit,
-			Margin:        margin,
-			Markup:        markup,
-			HasQuotedCost: hasQuotedCost,
-		})
 	}
-	return goodsCost, summaries
+	importCosts := estimateImportCosts(snap.Inputs, goodsCost, freight)
+	totalCost := goodsCost + freight + portTotals.TotalRMB + importCosts.IncludedTotal
+
+	// 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
+	profitRate := snap.Inputs.TargetProfit
+	divisor := 1 - profitRate/100
+	quoteRmb := 0.0
+	if divisor > 0.01 {
+		quoteRmb = totalCost / divisor
+	} else {
+		quoteRmb = totalCost * (1 + profitRate/100)
+	}
+	quoteUsd := 0.0
+	if snap.Inputs.ExchangeRate > 0 {
+		quoteUsd = quoteRmb / snap.Inputs.ExchangeRate
+	}
+	quoteEur := 0.0
+	if snap.Inputs.EurExchangeRate > 0 {
+		quoteEur = quoteRmb / snap.Inputs.EurExchangeRate
+	}
+
+	targetPrice := quoteRmb
+	profit := quoteRmb - totalCost
+	margin := 0.0
+	if quoteRmb > 0 {
+		margin = (profit / quoteRmb) * 100
+	}
+	markup := 0.0
+	if totalCost > 0 {
+		markup = (profit / totalCost) * 100
+	}
+
+	return goodsCost, []SummaryRow{{
+		Scheme:        "默认",
+		Freight:       freight,
+		PortCharges:   portTotals.TotalRMB,
+		ImportCosts:   importCosts,
+		TotalCost:     totalCost,
+		TargetPrice:   targetPrice,
+		QuoteUsd:      quoteUsd,
+		QuoteEur:      quoteEur,
+		QuoteRmb:      quoteRmb,
+		Profit:        profit,
+		Margin:        margin,
+		Markup:        markup,
+		HasQuotedCost: hasQuotedCost,
+	}}
 }
 
 func CargoStatsFor(cargo []CargoRow) CargoStats {
@@ -112,7 +108,7 @@ func CalculatePortCharges(snap *Snapshot) PortTotals {
 	stats := CargoStatsFor(snap.Cargo)
 	totals := PortTotals{}
 	for _, row := range snap.PortCharges {
-		if !row.Included || row.Rate == 0 {
+		if !row.Included || (row.Rate == 0 && row.AltRate == 0) {
 			continue
 		}
 		result := calculatePortChargeRow(row, snap.Inputs, stats)
@@ -128,38 +124,83 @@ func CalculatePortCharges(snap *Snapshot) PortTotals {
 }
 
 func calculatePortChargeRow(row PortChargeRow, inputs Inputs, stats CargoStats) PortChargeResultRow {
-	unit := strings.ToLower(strings.TrimSpace(row.Unit))
-	base := 1.0
-	switch unit {
-	case "rt":
-		base = stats.RT
-	case "ton":
-		base = stats.WeightTon
-	case "cbm":
-		base = stats.VolumeCBM
-	case "hbl", "票", "fixed", "":
-		base = 1
-	default:
-		base = 1
+	unit := normalizeChargeUnit(row.Unit)
+	base := chargeBase(unit, stats)
+	primaryAmount := row.Rate * base
+	altUnit := normalizeChargeUnit(row.AltUnit)
+	altBase := 0.0
+	altAmount := 0.0
+	if row.AltRate > 0 {
+		altBase = chargeBase(altUnit, stats)
+		altAmount = row.AltRate * altBase
 	}
-	amount := row.Rate * base
+	mode := normalizeChargeMode(row.ChargeMode)
+	amount := primaryAmount
+	if row.AltRate > 0 {
+		if mode == "min" {
+			if altAmount < amount {
+				amount = altAmount
+			}
+		} else {
+			if altAmount > amount {
+				amount = altAmount
+			}
+		}
+	}
 	if row.Min != 0 && amount < row.Min {
 		amount = row.Min
 	}
 	rate := portExchangeRate(row.Currency, inputs)
 	return PortChargeResultRow{
-		Side:         normalizePortSide(row.Side),
-		Item:         row.Item,
-		Currency:     normalizeCurrency(row.Currency),
-		Unit:         unit,
-		Rate:         row.Rate,
-		Min:          row.Min,
-		Base:         base,
-		Amount:       amount,
-		AmountRMB:    amount * rate,
-		ExchangeRate: rate,
-		Included:     row.Included,
+		Side:          normalizePortSide(row.Side),
+		Item:          row.Item,
+		Currency:      normalizeCurrency(row.Currency),
+		Unit:          unit,
+		Rate:          row.Rate,
+		AltUnit:       altUnit,
+		AltRate:       row.AltRate,
+		ChargeMode:    mode,
+		Min:           row.Min,
+		Base:          base,
+		AltBase:       altBase,
+		PrimaryAmount: primaryAmount,
+		AltAmount:     altAmount,
+		Amount:        amount,
+		AmountRMB:     amount * rate,
+		ExchangeRate:  rate,
+		Included:      row.Included,
 	}
+}
+
+func normalizeChargeUnit(unit string) string {
+	unit = strings.ToLower(strings.TrimSpace(unit))
+	switch unit {
+	case "rt", "ton", "cbm", "hbl", "票", "fixed":
+		return unit
+	default:
+		return "fixed"
+	}
+}
+
+func chargeBase(unit string, stats CargoStats) float64 {
+	switch unit {
+	case "rt":
+		return stats.RT
+	case "ton":
+		return stats.WeightTon
+	case "cbm":
+		return stats.VolumeCBM
+	default:
+		return 1
+	}
+}
+
+func normalizeChargeMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "min" || mode == "lower" {
+		return "min"
+	}
+	return "max"
 }
 
 func normalizePortSide(side string) string {
@@ -246,34 +287,6 @@ func bestScheme(summaries []SummaryRow) SummaryRow {
 	return best
 }
 
-func summarySchemeIDs(snap *Snapshot) []string {
-	seen := make(map[string]bool)
-	var out []string
-	for _, row := range snap.Freight {
-		if !isMeaningfulFreightRow(row) || strings.TrimSpace(row.Scheme) == "" {
-			continue
-		}
-		if !seen[row.Scheme] {
-			seen[row.Scheme] = true
-			out = append(out, row.Scheme)
-		}
-	}
-	if len(out) > 0 {
-		return out
-	}
-	for _, scheme := range snap.Schemes {
-		if strings.TrimSpace(scheme) == "" || seen[scheme] {
-			continue
-		}
-		seen[scheme] = true
-		out = append(out, scheme)
-	}
-	if len(out) > 0 {
-		return []string{out[0]}
-	}
-	return []string{"A"}
-}
-
 func isMeaningfulFreightRow(row FreightRow) bool {
 	return strings.TrimSpace(row.Item) != "" || row.Amount > 0
 }
@@ -321,23 +334,8 @@ func FixDefaults(snap *Snapshot) {
 	if snap.Inputs.EurExchangeRate == 0 {
 		snap.Inputs.EurExchangeRate = 7.8
 	}
-	if len(snap.Schemes) == 0 {
-		for _, fr := range snap.Freight {
-			if fr.Scheme != "" {
-				snap.Schemes = append(snap.Schemes, fr.Scheme)
-			}
-		}
-		if len(snap.Schemes) == 0 {
-			snap.Schemes = []string{"A"}
-		}
-		seen := make(map[string]bool)
-		var dedup []string
-		for _, s := range snap.Schemes {
-			if !seen[s] {
-				seen[s] = true
-				dedup = append(dedup, s)
-			}
-		}
-		snap.Schemes = dedup
+	snap.Schemes = []string{"默认"}
+	for idx := range snap.Freight {
+		snap.Freight[idx].Scheme = "默认"
 	}
 }

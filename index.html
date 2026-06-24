@@ -18,7 +18,7 @@
     <header class="topbar">
       <div>
         <h1>CFR报价自动计算器</h1>
-        <p class="subtitle">货物成本、货代费用、客户报价、净利润自动联动</p>
+        <p class="subtitle">货物成本、港口费用、其他费用、客户报价、净利润自动联动</p>
       </div>
       <div class="actions">
         <button class="btn primary" id="archiveBtn" title="归档到服务器（长期保存）" type="button">保存到归档</button>
@@ -230,6 +230,9 @@
                   <col class="port-currency">
                   <col class="port-unit">
                   <col class="port-rate">
+                  <col class="port-unit">
+                  <col class="port-rate">
+                  <col class="port-mode">
                   <col class="port-min">
                   <col class="port-base">
                   <col class="port-amount">
@@ -243,6 +246,9 @@
                     <th>币种</th>
                     <th>计费</th>
                     <th>单价</th>
+                    <th>备用计费</th>
+                    <th>备用单价</th>
+                    <th>规则</th>
                     <th>最低</th>
                     <th>基数</th>
                     <th>折合RMB</th>
@@ -258,15 +264,13 @@
 
         <section class="section">
           <div class="section-header">
-            <h2 class="section-title">货代费用</h2>
-            <div class="selected-scheme-wrap">
-                <label for="selectedScheme">当前编辑</label>
-                <select id="selectedScheme" class="scheme-select"></select>
-              </div>
-              <div class="actions">
-                <button class="btn" id="addFreightSchemeBtn" type="button">新增货代方案</button>
-                <button class="btn" id="addFreightBtn" type="button">新增费用</button>
-              </div>
+            <div>
+              <h2 class="section-title">其他费用</h2>
+              <span class="section-helper">用于填写不属于港口 RT 计费的杂项费用，直接计入最终采用总成本</span>
+            </div>
+            <div class="actions">
+              <button class="btn" id="addFreightBtn" type="button">新增费用</button>
+            </div>
           </div>
           <div class="section-body">
             <datalist id="freightItemList">
@@ -291,7 +295,6 @@
             <div class="table-wrap freight-scroll">
               <table id="freightTable">
                 <colgroup>
-                  <col class="freight-scheme">
                   <col class="freight-item">
                   <col class="freight-amount">
                   <col class="freight-included">
@@ -299,10 +302,9 @@
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>方案</th>
                     <th>费用项目</th>
                     <th>金额RMB</th>
-                    <th>计入报价</th>
+                    <th>计入总成本</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -317,7 +319,7 @@
         <section class="section">
           <div class="section-header">
             <h2 class="section-title">最终结果</h2>
-            <span class="pill" id="selectedSchemePill">A货代</span>
+            <span class="pill" id="selectedSchemePill">单一成本</span>
           </div>
           <div class="section-body">
             <div class="summary-grid">
@@ -364,15 +366,14 @@
 
         <section class="section">
           <div class="section-header">
-            <h2 class="section-title">方案对比</h2>
+            <h2 class="section-title">成本构成</h2>
           </div>
           <div class="section-body">
             <div class="table-wrap">
               <table class="summary-table" id="summaryTable">
                 <thead>
                   <tr>
-                    <th>方案</th>
-                    <th>物流费</th>
+                    <th>其他费用</th>
                     <th>港口费</th>
                     <th>总成本</th>
                     <th id="summaryQuoteHeader">报价USD</th>
@@ -624,26 +625,10 @@
 
   </main>
 
-  <div class="modal-backdrop hidden" id="schemePromptDialog" role="dialog" aria-modal="true">
-    <div class="modal">
-      <h2>新增货代方案</h2>
-      <p>输入此货代方案的名称，例如"马士基"、"中远"或"A货代"。</p>
-      <div class="field modal-field">
-        <label for="schemeNameInput">方案名称</label>
-        <input id="schemeNameInput" class="scheme-name-input" placeholder="例如：马士基" autofocus>
-      </div>
-      <p class="scheme-error hidden" id="schemeError"></p>
-      <div class="modal-actions">
-        <button class="btn primary" id="saveSchemeBtn" type="button">确定</button>
-        <button class="btn" id="cancelSchemeBtn" type="button">取消</button>
-      </div>
-    </div>
-  </div>
-
   <div class="modal-backdrop hidden" id="exportDialog" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
     <div class="modal">
       <h2 id="exportDialogTitle">选择下载版本</h2>
-      <p>客户版不包含成本、利润、货代明细；内部留存版包含完整测算。</p>
+      <p>客户版不包含成本、利润、费用明细；内部留存版包含完整测算。</p>
       <div class="field modal-field">
         <label for="exportLanguage">导出语言</label>
         <select id="exportLanguage">

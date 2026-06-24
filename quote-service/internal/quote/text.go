@@ -92,5 +92,5 @@ func yesNo(v bool, lang string) string {
 }
 
 func freightName(scheme, lang string) string {
-	return scheme + tx(lang, "货代", " Forwarder")
+	return tx(lang, "费用汇总", "Cost Summary")
 }

@@ -43,3 +43,40 @@ func TestPortChargesAreIncludedInTotalCost(t *testing.T) {
 		t.Fatalf("total cost = %v, want %v", got, want)
 	}
 }
+
+func TestPortChargeCompositeMaxRule(t *testing.T) {
+	snap := Snapshot{
+		Inputs: Inputs{EurExchangeRate: 8},
+		Cargo: []CargoRow{
+			{Length: 200, Width: 100, Height: 100, Weight: 500, Qty: 2},
+		},
+		PortCharges: []PortChargeRow{
+			{
+				Side:       "destination",
+				Item:       "UNSTUFFING/RELOADING",
+				Currency:   "EUR",
+				Unit:       "ton",
+				Rate:       210,
+				AltUnit:    "rt",
+				AltRate:    113,
+				ChargeMode: "max",
+				Min:        210,
+				Included:   true,
+			},
+		},
+	}
+
+	result := Calculate(&snap)
+	if got, want := result.PortCharges.Rows[0].PrimaryAmount, 210.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("primary amount = %v, want %v", got, want)
+	}
+	if got, want := result.PortCharges.Rows[0].AltAmount, 452.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("alt amount = %v, want %v", got, want)
+	}
+	if got, want := result.PortCharges.Rows[0].Amount, 452.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("selected amount = %v, want %v", got, want)
+	}
+	if got, want := result.PortCharges.TotalRMB, 3616.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("total rmb = %v, want %v", got, want)
+	}
+}
