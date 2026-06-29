@@ -875,11 +875,18 @@ function loadPortChargeExamples() {
   showToast("已套用港口费用示例，可继续修改单价和最低收费");
 }
 
+function clearPortCharges() {
+  state.portCharges = [];
+  syncAndRender();
+  scheduleAutoSave();
+  showToast("已清空港口费用");
+}
+
 function applyEmptyState() {
   state.schemes = [defaultScheme];
   state.cargo = [];
   state.freight = [];
-  state.portCharges = defaultPortCharges();
+  state.portCharges = [];
 }
 
 function clearInputFields() {
@@ -2061,6 +2068,7 @@ $("addFreightBtn").addEventListener("click", () => addFreight());
 $("addPortChargeBtn").addEventListener("click", () => addPortCharge());
 $("addDestinationPortChargeBtn").addEventListener("click", addDestinationPortCharge);
 $("loadPortExampleBtn").addEventListener("click", loadPortChargeExamples);
+$("clearPortChargesBtn").addEventListener("click", clearPortCharges);
 $("fetchRateBtn").addEventListener("click", fetchUsdCnyRate);
 $("policyLookupBtn").addEventListener("click", openPolicyLookup);
 $("clearBtn").addEventListener("click", clearAllData);
