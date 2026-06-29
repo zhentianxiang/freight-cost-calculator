@@ -1197,31 +1197,25 @@ function buildPdfHtml(snapshot, result, mode, lang) {
 }
 
 async function downloadPDF(mode, lang, suffix, langSuffix) {
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    alert("浏览器阻止了PDF导出窗口，请允许弹窗后重试。");
-    return;
-  }
-  printWindow.document.write("<!doctype html><meta charset='utf-8'><title>PDF</title><p style='font:16px sans-serif;padding:24px'>正在生成PDF...</p>");
   try {
     const snapshot = normalizeSnapshotForServer(getSnapshot("PDF导出"));
-    const resp = await fetch("/api/quote/calculate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(snapshot),
-    });
-    if (!resp.ok) {
-      const message = await resp.text();
-      throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
-    }
-    const result = await resp.json();
-    const html = buildPdfHtml(snapshot, result, mode, lang);
-    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-    printWindow.location.replace(blobUrl);
-    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-    $("statusLine").textContent = `已生成PDF打印页（${suffix}），请选择“保存为PDF”。`;
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = `/api/export/pdf?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}`;
+    form.target = "_blank";
+    form.style.display = "none";
+
+    const payload = document.createElement("input");
+    payload.type = "hidden";
+    payload.name = "snapshot";
+    payload.value = JSON.stringify(snapshot);
+    form.appendChild(payload);
+
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+    $("statusLine").textContent = `已打开PDF文件（${suffix}）。`;
   } catch (e) {
-    printWindow.close();
     $("statusLine").textContent = "PDF导出失败，请确认服务器可用。";
     alert("PDF导出失败: " + e.message);
   }
