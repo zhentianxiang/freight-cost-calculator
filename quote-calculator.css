@@ -391,6 +391,70 @@ textarea:focus {
   overflow: auto;
 }
 
+.destination-charge-scroll {
+  max-height: 320px;
+}
+
+.subsection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.subsection-title {
+  margin: 16px 0 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.subsection-header .subsection-title {
+  margin-top: 0;
+}
+
+.subsection-header .note {
+  margin: 4px 0 0;
+}
+
+.glossary-panel {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.glossary-panel .subsection-title {
+  margin-top: 0;
+}
+
+.glossary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+}
+
+.glossary-grid div {
+  min-width: 0;
+}
+
+.glossary-grid dt {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.glossary-grid dd {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .port-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1031,6 +1095,15 @@ td select:focus {
 
   .converter-inputs,
   .converter-results {
+    grid-template-columns: 1fr;
+  }
+
+  .subsection-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .glossary-grid {
     grid-template-columns: 1fr;
   }
 }

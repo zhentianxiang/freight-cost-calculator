@@ -207,7 +207,7 @@
           <div class="section-header">
             <div>
               <h2 class="section-title">港口费用计算</h2>
-              <span class="section-helper">自动按货物总体积/总重量计算 RT，并折算为 RMB 计入最终采用总成本</span>
+              <span class="section-helper">出发港费用计入报价成本；目的港费用单独记录，仅供查看和解释</span>
             </div>
             <div class="actions">
               <button class="btn" id="loadPortExampleBtn" type="button">套用港口示例</button>
@@ -219,13 +219,13 @@
               <div class="port-metric"><span>总体积 CBM</span><strong id="cargoVolumeCbm">0.000</strong></div>
               <div class="port-metric"><span>总重量 TON</span><strong id="cargoWeightTon">0.000</strong></div>
               <div class="port-metric"><span>计费 RT</span><strong id="cargoChargeRt">0.000</strong></div>
-              <div class="port-metric"><span>港口费合计 RMB</span><strong id="portChargeTotal">¥0</strong></div>
+              <div class="port-metric"><span>出发港费合计 RMB</span><strong id="portChargeTotal">¥0</strong></div>
             </div>
             <p class="note">RT 通常按总体积 CBM 与总重量吨取大值估算；实际收费以货代/港口账单为准。</p>
+            <h3 class="subsection-title">出发港费用（计入系统报价）</h3>
             <div class="table-wrap port-charge-scroll">
               <table id="portChargeTable">
                 <colgroup>
-                  <col class="port-side">
                   <col class="port-item">
                   <col class="port-currency">
                   <col class="port-unit">
@@ -241,7 +241,6 @@
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>港口</th>
                     <th>费用项目</th>
                     <th>币种</th>
                     <th>计费</th>
@@ -259,6 +258,61 @@
                 <tbody></tbody>
               </table>
             </div>
+            <div class="subsection-header">
+              <div>
+                <h3 class="subsection-title">目的港费用（仅查看，不计入报价）</h3>
+                <p class="note">适合记录货代给的目的港收费，方便给客户解释或内部核对，不会进入上方港口费合计。</p>
+              </div>
+              <button class="btn" id="addDestinationPortChargeBtn" type="button">新增目的港费用</button>
+            </div>
+            <div class="table-wrap port-charge-scroll destination-charge-scroll">
+              <table id="destinationPortChargeTable">
+                <colgroup>
+                  <col class="port-item">
+                  <col class="port-currency">
+                  <col class="port-unit">
+                  <col class="port-rate">
+                  <col class="port-unit">
+                  <col class="port-rate">
+                  <col class="port-mode">
+                  <col class="port-min">
+                  <col class="port-base">
+                  <col class="port-amount">
+                  <col class="row-action">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>费用项目</th>
+                    <th>币种</th>
+                    <th>计费</th>
+                    <th>单价</th>
+                    <th>备用计费</th>
+                    <th>备用单价</th>
+                    <th>规则</th>
+                    <th>最低</th>
+                    <th>基数</th>
+                    <th>折合RMB</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="glossary-panel">
+              <h3 class="subsection-title">港口费用术语</h3>
+              <dl class="glossary-grid">
+                <div><dt>RT / W/M</dt><dd>计费吨。通常按总体积 CBM 与总重量 TON 取大值。</dd></div>
+                <div><dt>CBM</dt><dd>立方米，按长 × 宽 × 高 × 数量计算体积。</dd></div>
+                <div><dt>TON</dt><dd>重量吨，按总公斤数除以 1000。</dd></div>
+                <div><dt>BL / HBL</dt><dd>提单/货代分单。按票收费时，系统用 HBL 或固定计费。</dd></div>
+                <div><dt>ENS</dt><dd>欧盟入境摘要申报费，常见为按票收取。</dd></div>
+                <div><dt>THC</dt><dd>码头操作费，可能按 RT/W/M 收，也可能有最低收费。</dd></div>
+                <div><dt>ISPS</dt><dd>港口安保附加费，常见为按票收取。</dd></div>
+                <div><dt>CIC / CAF / CISF</dt><dd>货代附加费名称，按货代报价口径填写单价和计费单位。</dd></div>
+                <div><dt>MIN</dt><dd>最低收费。公式算出来低于最低值时，按最低值收。</dd></div>
+                <div><dt>AT COST</dt><dd>按实际发生收取，没有固定单价，报价时建议先不计入或单独确认。</dd></div>
+              </dl>
+            </div>
           </div>
         </section>
 
@@ -274,23 +328,8 @@
           </div>
           <div class="section-body">
             <datalist id="freightItemList">
-              <option value="船运费用"></option>
-              <option value="保险费"></option>
-              <option value="报关费用"></option>
-              <option value="港杂费用"></option>
-              <option value="送货到港口费用"></option>
-              <option value="订舱费"></option>
-              <option value="文件费"></option>
-              <option value="THC码头操作费"></option>
-              <option value="EDI费"></option>
-              <option value="设备管理费"></option>
-              <option value="舱单录入费"></option>
-              <option value="电放费"></option>
-              <option value="熏蒸费"></option>
-              <option value="拖车费"></option>
-              <option value="仓储费"></option>
-              <option value="查验费"></option>
-              <option value="目的港费用"></option>
+              <option value="国内派送费"></option>
+              <option value="装卸费用"></option>
             </datalist>
             <div class="table-wrap freight-scroll">
               <table id="freightTable">

@@ -36,10 +36,13 @@ func TestPortChargesAreIncludedInTotalCost(t *testing.T) {
 	if got, want := result.CargoStats.RT, 4.0; math.Abs(got-want) > 0.001 {
 		t.Fatalf("rt = %v, want %v", got, want)
 	}
-	if got, want := result.PortCharges.TotalRMB, 320.0; math.Abs(got-want) > 0.001 {
+	if got, want := result.PortCharges.TotalRMB, 280.0; math.Abs(got-want) > 0.001 {
 		t.Fatalf("port total = %v, want %v", got, want)
 	}
-	if got, want := result.Selected.TotalCost, 2420.0; math.Abs(got-want) > 0.001 {
+	if got, want := result.PortCharges.DestinationRMB, 40.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("destination port total = %v, want %v", got, want)
+	}
+	if got, want := result.Selected.TotalCost, 2380.0; math.Abs(got-want) > 0.001 {
 		t.Fatalf("total cost = %v, want %v", got, want)
 	}
 }
@@ -76,7 +79,10 @@ func TestPortChargeCompositeMaxRule(t *testing.T) {
 	if got, want := result.PortCharges.Rows[0].Amount, 452.0; math.Abs(got-want) > 0.001 {
 		t.Fatalf("selected amount = %v, want %v", got, want)
 	}
-	if got, want := result.PortCharges.TotalRMB, 3616.0; math.Abs(got-want) > 0.001 {
+	if got, want := result.PortCharges.DestinationRMB, 3616.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("destination rmb = %v, want %v", got, want)
+	}
+	if got, want := result.PortCharges.TotalRMB, 0.0; math.Abs(got-want) > 0.001 {
 		t.Fatalf("total rmb = %v, want %v", got, want)
 	}
 }

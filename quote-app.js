@@ -32,6 +32,7 @@ let toastTimer = 0;
 let calculationRequestId = 0;
 let latestCalculationResult = null;
 let currentArchiveId = "";
+let summaryRefreshTimer = 0;
 
 const piDefaultTerms = `1. This PI becomes binding after buyer's written acceptance and seller's receipt of agreed deposit or full payment.
 2. Production and shipment schedules are counted from the date cleared funds are received in seller's bank account.
@@ -120,8 +121,8 @@ function portChargeBase(row, stats = cargoStats()) {
   return 1;
 }
 
-function portChargeAmount(row, stats = cargoStats()) {
-  if (!row.included) return { base: portChargeBase(row, stats), amount: 0, amountRmb: 0 };
+function portChargeAmount(row, stats = cargoStats(), { respectIncluded = true } = {}) {
+  if (respectIncluded && !row.included) return { base: portChargeBase(row, stats), amount: 0, amountRmb: 0 };
   const base = portChargeBase(row, stats);
   const primaryAmount = cleanNum(row.rate) * base;
   let amount = primaryAmount;
@@ -147,7 +148,10 @@ function portChargeAmount(row, stats = cargoStats()) {
 
 function portChargeTotals() {
   const stats = cargoStats();
-  return state.portCharges.reduce((total, row) => total + portChargeAmount(row, stats).amountRmb, 0);
+  return state.portCharges.reduce((total, row) => {
+    if (row.side === "destination") return total;
+    return total + portChargeAmount(row, stats).amountRmb;
+  }, 0);
 }
 
 function quoteValueByCurrency(row, currency) {
@@ -175,6 +179,13 @@ async function ensureCalculationResult() {
   if (latestCalculationResult) return latestCalculationResult;
   latestCalculationResult = await calculateOnServer();
   return latestCalculationResult;
+}
+
+function scheduleSummaryRefresh() {
+  window.clearTimeout(summaryRefreshTimer);
+  summaryRefreshTimer = window.setTimeout(() => {
+    renderSummary();
+  }, 300);
 }
 
 function customerCargoUnitByCurrency(row, selected, goodsCost, currency) {
@@ -461,16 +472,25 @@ function renderCargo() {
 }
 
 const portChargeExamples = [
-  { side: "origin", item: "海运费", currency: "USD", unit: "rt", rate: 170, min: 0, included: true },
+  { side: "origin", item: "海运费/退费待确认", currency: "USD", unit: "rt", rate: 270, min: 0, included: true },
   { side: "origin", item: "ENS", currency: "USD", unit: "hbl", rate: 25, min: 0, included: true },
   { side: "origin", item: "港杂", currency: "RMB", unit: "rt", rate: 185, min: 0, included: true },
   { side: "origin", item: "报关", currency: "RMB", unit: "hbl", rate: 100, min: 0, included: true },
-  { side: "destination", item: "UNSTUFFING/RELOADING", currency: "EUR", unit: "ton", rate: 210, altUnit: "rt", altRate: 113, chargeMode: "max", min: 210, included: true },
-  { side: "destination", item: "DOC FEE", currency: "EUR", unit: "hbl", rate: 170, min: 0, included: true },
-  { side: "destination", item: "ISPS", currency: "EUR", unit: "hbl", rate: 10, min: 0, included: true },
-  { side: "destination", item: "WHARFAGE", currency: "EUR", unit: "ton", rate: 1.5, min: 3.5, included: true },
-  { side: "destination", item: "LCL CHARGE", currency: "EUR", unit: "rt", rate: 70, min: 70, included: true },
-  { side: "destination", item: "EXCHANGE RATE SURCHARGE", currency: "EUR", unit: "rt", rate: 48, min: 48, included: true }
+  { side: "destination", item: "DOCUMENTATION", currency: "EUR", unit: "hbl", rate: 72.92, min: 0, included: false },
+  { side: "destination", item: "STRIPPING", currency: "EUR", unit: "cbm", rate: 32.86, altUnit: "ton", altRate: 75.26, chargeMode: "max", min: 75.26, included: false },
+  { side: "destination", item: "THC", currency: "EUR", unit: "rt", rate: 35.08, min: 88.09, included: false },
+  { side: "destination", item: "ISPS", currency: "EUR", unit: "hbl", rate: 6.36, min: 0, included: false },
+  { side: "destination", item: "T3", currency: "EUR", unit: "ton", rate: 4.24, min: 0, included: false },
+  { side: "destination", item: "Inland", currency: "EUR", unit: "rt", rate: 12.9, min: 34.98, included: false },
+  { side: "destination", item: "WAREHOUSE", currency: "EUR", unit: "rt", rate: 70, min: 0, included: false },
+  { side: "destination", item: "ERS", currency: "EUR", unit: "rt", rate: 18, min: 0, included: false },
+  { side: "destination", item: "Comm. & Logistic fee", currency: "EUR", unit: "hbl", rate: 200, min: 0, included: false },
+  { side: "destination", item: "CIC", currency: "EUR", unit: "hbl", rate: 15.9, min: 0, included: false },
+  { side: "destination", item: "SECURITY AND SANITARY FEE", currency: "EUR", unit: "hbl", rate: 20, min: 0, included: false },
+  { side: "destination", item: "CISF", currency: "USD", unit: "rt", rate: 130, min: 0, included: false },
+  { side: "destination", item: "CAF", currency: "USD", unit: "rt", rate: 20, min: 0, included: false },
+  { side: "destination", item: "FUEL SURCHARGE AT COST", currency: "EUR", unit: "fixed", rate: 0, min: 0, included: false },
+  { side: "destination", item: "T-1 formalities", currency: "EUR", unit: "fixed", rate: 45, min: 0, included: false }
 ];
 
 function defaultPortCharges() {
@@ -484,93 +504,98 @@ function renderPortCharges(result) {
   $("cargoChargeRt").textContent = (stats.rt || 0).toFixed(3);
   $("portChargeTotal").textContent = money(result?.portCharges?.totalRmb ?? portChargeTotals());
 
-  const tbody = $("portChargeTable").querySelector("tbody");
+  renderPortChargeTable("portChargeTable", stats, {
+    rows: state.portCharges
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.side !== "destination"),
+    showIncluded: true,
+    emptyText: "暂无出发港费用。可点击“新增费用”手动填写，或点击“套用港口示例”。"
+  });
+  renderPortChargeTable("destinationPortChargeTable", stats, {
+    rows: state.portCharges
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.side === "destination"),
+    showIncluded: false,
+    emptyText: "暂无目的港费用。可点击“新增目的港费用”手动填写，或点击“套用港口示例”。"
+  });
+}
+
+function renderPortChargeTable(tableId, stats, { rows, showIncluded, emptyText }) {
+  const tbody = $(tableId).querySelector("tbody");
   tbody.innerHTML = "";
-  state.portCharges.forEach((row, index) => {
-    const calc = portChargeAmount(row, stats);
+  rows.forEach(({ row, index }) => {
+    const calc = portChargeAmount(row, stats, { respectIncluded: showIncluded });
     const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="port-side">
-        <select data-port-charge="${index}" data-key="side">
-          <option value="origin"${row.side !== "destination" ? " selected" : ""}>出发港</option>
-          <option value="destination"${row.side === "destination" ? " selected" : ""}>目的港</option>
-        </select>
-      </td>
-      <td class="port-item"><input value="${escapeXml(row.item || "")}" data-port-charge="${index}" data-key="item" placeholder="费用项目"></td>
-      <td class="port-currency">
-        <select data-port-charge="${index}" data-key="currency">
-          <option value="RMB"${row.currency === "RMB" ? " selected" : ""}>RMB</option>
-          <option value="USD"${row.currency === "USD" ? " selected" : ""}>USD</option>
-          <option value="EUR"${row.currency === "EUR" ? " selected" : ""}>EUR</option>
-        </select>
-      </td>
-      <td class="port-unit">
-        <select data-port-charge="${index}" data-key="unit">
-          <option value="rt"${row.unit === "rt" ? " selected" : ""}>RT</option>
-          <option value="ton"${row.unit === "ton" ? " selected" : ""}>TON</option>
-          <option value="cbm"${row.unit === "cbm" ? " selected" : ""}>CBM</option>
-          <option value="hbl"${row.unit === "hbl" ? " selected" : ""}>HBL</option>
-          <option value="fixed"${row.unit === "fixed" ? " selected" : ""}>固定</option>
-        </select>
-      </td>
-      <td class="port-rate"><input class="num" type="number" step="0.01" value="${row.rate || 0}" data-port-charge="${index}" data-key="rate"></td>
-      <td class="port-unit">
-        <select data-port-charge="${index}" data-key="altUnit">
-          <option value=""${!row.altUnit ? " selected" : ""}>无</option>
-          <option value="rt"${row.altUnit === "rt" ? " selected" : ""}>RT</option>
-          <option value="ton"${row.altUnit === "ton" ? " selected" : ""}>TON</option>
-          <option value="cbm"${row.altUnit === "cbm" ? " selected" : ""}>CBM</option>
-          <option value="hbl"${row.altUnit === "hbl" ? " selected" : ""}>HBL</option>
-          <option value="fixed"${row.altUnit === "fixed" ? " selected" : ""}>固定</option>
-        </select>
-      </td>
-      <td class="port-rate"><input class="num" type="number" step="0.01" value="${row.altRate || 0}" data-port-charge="${index}" data-key="altRate"></td>
-      <td class="port-mode">
-        <select data-port-charge="${index}" data-key="chargeMode">
-          <option value="max"${(row.chargeMode || "max") === "max" ? " selected" : ""}>取高</option>
-          <option value="min"${row.chargeMode === "min" ? " selected" : ""}>取低</option>
-        </select>
-      </td>
-      <td class="port-min"><input class="num" type="number" step="0.01" value="${row.min || 0}" data-port-charge="${index}" data-key="min"></td>
-      <td class="port-base readonly">${calc.altAmount ? `${calc.base.toFixed(3)} / ${calc.altBase.toFixed(3)}` : calc.base.toFixed(3)}</td>
-      <td class="port-amount readonly">${money(calc.amountRmb)}</td>
+    tr.innerHTML = portChargeRowHtml(row, index, calc, showIncluded);
+    tbody.appendChild(tr);
+  });
+
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="${showIncluded ? 12 : 11}" class="readonly" style="text-align:left">${emptyText}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function portChargeRowHtml(row, index, calc, showIncluded) {
+  return `
+    <td class="port-item"><input value="${escapeXml(row.item || "")}" data-port-charge="${index}" data-key="item" placeholder="费用项目"></td>
+    <td class="port-currency">
+      <select data-port-charge="${index}" data-key="currency">
+        <option value="RMB"${row.currency === "RMB" ? " selected" : ""}>RMB</option>
+        <option value="USD"${row.currency === "USD" ? " selected" : ""}>USD</option>
+        <option value="EUR"${row.currency === "EUR" ? " selected" : ""}>EUR</option>
+      </select>
+    </td>
+    <td class="port-unit">
+      <select data-port-charge="${index}" data-key="unit">
+        <option value="rt"${row.unit === "rt" ? " selected" : ""}>RT</option>
+        <option value="ton"${row.unit === "ton" ? " selected" : ""}>TON</option>
+        <option value="cbm"${row.unit === "cbm" ? " selected" : ""}>CBM</option>
+        <option value="hbl"${row.unit === "hbl" ? " selected" : ""}>HBL</option>
+        <option value="fixed"${row.unit === "fixed" ? " selected" : ""}>固定</option>
+      </select>
+    </td>
+    <td class="port-rate"><input class="num" type="number" step="0.01" value="${row.rate || 0}" data-port-charge="${index}" data-key="rate"></td>
+    <td class="port-unit">
+      <select data-port-charge="${index}" data-key="altUnit">
+        <option value=""${!row.altUnit ? " selected" : ""}>无</option>
+        <option value="rt"${row.altUnit === "rt" ? " selected" : ""}>RT</option>
+        <option value="ton"${row.altUnit === "ton" ? " selected" : ""}>TON</option>
+        <option value="cbm"${row.altUnit === "cbm" ? " selected" : ""}>CBM</option>
+        <option value="hbl"${row.altUnit === "hbl" ? " selected" : ""}>HBL</option>
+        <option value="fixed"${row.altUnit === "fixed" ? " selected" : ""}>固定</option>
+      </select>
+    </td>
+    <td class="port-rate"><input class="num" type="number" step="0.01" value="${row.altRate || 0}" data-port-charge="${index}" data-key="altRate"></td>
+    <td class="port-mode">
+      <select data-port-charge="${index}" data-key="chargeMode">
+        <option value="max"${(row.chargeMode || "max") === "max" ? " selected" : ""}>取高</option>
+        <option value="min"${row.chargeMode === "min" ? " selected" : ""}>取低</option>
+      </select>
+    </td>
+    <td class="port-min"><input class="num" type="number" step="0.01" value="${row.min || 0}" data-port-charge="${index}" data-key="min"></td>
+    <td class="port-base readonly">${calc.altAmount ? `${calc.base.toFixed(3)} / ${calc.altBase.toFixed(3)}` : calc.base.toFixed(3)}</td>
+    <td class="port-amount readonly">${money(calc.amountRmb)}</td>
+    ${showIncluded ? `
       <td class="port-included">
         <select data-port-charge="${index}" data-key="included">
           <option value="true"${row.included ? " selected" : ""}>是</option>
           <option value="false"${!row.included ? " selected" : ""}>否</option>
         </select>
-      </td>
-      <td class="row-action"><button class="btn danger small-btn" type="button" data-delete-port-charge="${index}">×</button></td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  if (!state.portCharges.length) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="13" class="readonly" style="text-align:left">暂无港口费用。可点击“新增费用”手动填写，或点击“套用港口示例”。</td>`;
-    tbody.appendChild(tr);
-  }
+      </td>` : ""}
+    <td class="row-action"><button class="btn danger small-btn" type="button" data-delete-port-charge="${index}">×</button></td>
+  `;
 }
 
 const baseFreightItems = [
-  "船运费用", "保险费", "报关费用", "港杂费用", "送货到港口费用",
-  "订舱费", "文件费", "THC码头操作费", "EDI费", "设备管理费",
-  "舱单录入费", "电放费", "熏蒸费", "拖车费", "仓储费", "查验费", "目的港费用",
-  "目的国派送费", "进口清关服务费", "进口关税", "进口VAT/GST"
+  "国内派送费", "装卸费用"
 ];
 
 function updateFreightDatalist() {
-  const term = $("tradeTerm").value;
   const list = $("freightItemList");
   if (!list) return;
-  
-  const filtered = baseFreightItems.filter(item => {
-    if (term === "FOB" && item === "船运费用") return false;
-    if (term === "CFR" && item === "保险费") return false;
-    return true;
-  });
-  
-  list.innerHTML = filtered.map(i => `<option value="${escapeXml(i)}"></option>`).join("");
+  list.innerHTML = baseFreightItems.map(i => `<option value="${escapeXml(i)}"></option>`).join("");
 }
 
 function renderFreight() {
@@ -725,6 +750,8 @@ function updateStateOnInput(event) {
   }
   
   let changed = false;
+  let shouldRefreshSummary = false;
+  let shouldRefreshPortCharges = false;
   
   if (target.matches("[data-image-cargo]")) {
     updateCargoImage(target);
@@ -734,12 +761,14 @@ function updateStateOnInput(event) {
     const key = target.dataset.key;
     row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
     changed = true;
+    shouldRefreshSummary = true;
   } else if (target.matches("[data-freight]")) {
     const row = state.freight[Number(target.dataset.freight)];
     const key = target.dataset.key;
     if (key === "included") row[key] = target.value === "true";
     else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
     changed = true;
+    shouldRefreshSummary = true;
   } else if (target.matches("[data-port-charge]")) {
     const row = state.portCharges[Number(target.dataset.portCharge)];
     const key = target.dataset.key;
@@ -749,14 +778,17 @@ function updateStateOnInput(event) {
   } else if (target.id === "tradeTerm") {
     updateFreightDatalist();
     changed = true;
+    shouldRefreshSummary = true;
+    shouldRefreshPortCharges = true;
   } else if (target.closest(".section-body") || target.closest(".topbar")) {
     changed = true;
+    shouldRefreshSummary = true;
   }
 
   if (changed) {
     renderCurrencyConverter();
-    renderPortCharges();
-    renderSummary();
+    if (shouldRefreshPortCharges) renderPortCharges();
+    if (shouldRefreshSummary) scheduleSummaryRefresh();
     scheduleAutoSave();
   }
 }
@@ -788,13 +820,13 @@ function updateStateOnChange(event) {
     const key = target.dataset.key;
     if (key === "included") row[key] = target.value === "true";
     else row[key] = target.type === "number" ? cleanNum(target.value) : target.value;
-    renderPortCharges();
     changed = true;
   } else if (target.closest(".section-body") || target.closest(".topbar")) {
     changed = true;
   }
 
   if (changed) {
+    window.clearTimeout(summaryRefreshTimer);
     renderCurrencyConverter();
     renderPortCharges();
     renderSummary();
@@ -830,6 +862,10 @@ function addPortCharge(row = {}) {
   });
   syncAndRender();
   scheduleAutoSave();
+}
+
+function addDestinationPortCharge() {
+  addPortCharge({ side: "destination", currency: "EUR", included: false });
 }
 
 function loadPortChargeExamples() {
@@ -2023,6 +2059,7 @@ document.addEventListener("click", (event) => {
 $("addCargoBtn").addEventListener("click", addCargo);
 $("addFreightBtn").addEventListener("click", () => addFreight());
 $("addPortChargeBtn").addEventListener("click", () => addPortCharge());
+$("addDestinationPortChargeBtn").addEventListener("click", addDestinationPortCharge);
 $("loadPortExampleBtn").addEventListener("click", loadPortChargeExamples);
 $("fetchRateBtn").addEventListener("click", fetchUsdCnyRate);
 $("policyLookupBtn").addEventListener("click", openPolicyLookup);

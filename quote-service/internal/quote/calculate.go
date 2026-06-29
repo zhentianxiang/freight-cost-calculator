@@ -115,6 +115,7 @@ func CalculatePortCharges(snap *Snapshot) PortTotals {
 		totals.Rows = append(totals.Rows, result)
 		if result.Side == "destination" {
 			totals.DestinationRMB += result.AmountRMB
+			continue
 		} else {
 			totals.OriginRMB += result.AmountRMB
 		}

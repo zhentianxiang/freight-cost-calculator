@@ -197,6 +197,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		log.Printf("archive save rejected invalid_json=true error=%v", err)
 		return
 	}
+	s.preserveArchiveLabelOnUpdate(&snap)
 	if err := s.store.Save(snap); err != nil {
 		http.Error(w, "Failed to save", http.StatusInternalServerError)
 		log.Printf("archive save failed id=%q project=%q error=%v", snap.ID, snap.Inputs.ProjectName, err)
@@ -206,6 +207,32 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		snap.ID, snap.Label, snap.Inputs.ProjectName, len(snap.Cargo), len(snap.Freight))
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "Saved")
+}
+
+func (s *Server) preserveArchiveLabelOnUpdate(snap *quote.Snapshot) {
+	if snap.ID == "" || !isSystemSaveLabel(snap.Label) {
+		return
+	}
+	data, err := s.store.Load(snap.ID)
+	if err != nil {
+		return
+	}
+	var existing quote.Snapshot
+	if err := json.Unmarshal(data, &existing); err != nil {
+		return
+	}
+	if strings.TrimSpace(existing.Label) != "" {
+		snap.Label = existing.Label
+	}
+}
+
+func isSystemSaveLabel(label string) bool {
+	switch strings.TrimSpace(label) {
+	case "服务器归档", "图片迁移", "旧图片迁移":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
