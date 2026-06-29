@@ -967,6 +967,30 @@ function quoteDocumentTitle(mode, lang) {
   return `${safeName()} - ${base}`;
 }
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function hydratePdfSnapshotImages(snapshot) {
+  const cargo = Array.isArray(snapshot.cargo) ? snapshot.cargo : [];
+  await Promise.all(cargo.map(async (row) => {
+    if (row.imageData || !row.imageUrl) return;
+    try {
+      const resp = await fetch(row.imageUrl);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      row.imageData = await blobToDataUrl(await resp.blob());
+    } catch (error) {
+      row.imageUrl = new URL(row.imageUrl, window.location.origin).href;
+      console.warn("PDF image hydrate failed", error);
+    }
+  }));
+}
+
 function buildPdfHtml(snapshot, result, mode, lang) {
   const inputs = result.inputs || snapshot.inputs || {};
   const selected = result.selected || (result.schemes || [])[0] || {};
@@ -1132,7 +1156,18 @@ function buildPdfHtml(snapshot, result, mode, lang) {
   </style>
   <script>
     window.addEventListener("load", () => {
-      window.setTimeout(() => window.print(), 250);
+      const images = Array.from(document.images);
+      const waitForImage = (image) => {
+        if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+        if (image.decode) return image.decode().catch(() => undefined);
+        return new Promise((resolve) => {
+          image.onload = resolve;
+          image.onerror = resolve;
+        });
+      };
+      Promise.all(images.map(waitForImage)).then(() => {
+        window.setTimeout(() => window.print(), 250);
+      });
     });
   </script>
 </head>
@@ -1197,25 +1232,32 @@ function buildPdfHtml(snapshot, result, mode, lang) {
 }
 
 async function downloadPDF(mode, lang, suffix, langSuffix) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("浏览器阻止了PDF导出窗口，请允许弹窗后重试。");
+    return;
+  }
+  printWindow.document.write("<!doctype html><meta charset='utf-8'><title>PDF</title><p style='font:16px sans-serif;padding:24px'>正在生成PDF...</p>");
   try {
     const snapshot = normalizeSnapshotForServer(getSnapshot("PDF导出"));
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = `/api/export/pdf?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}`;
-    form.target = "_blank";
-    form.style.display = "none";
-
-    const payload = document.createElement("input");
-    payload.type = "hidden";
-    payload.name = "snapshot";
-    payload.value = JSON.stringify(snapshot);
-    form.appendChild(payload);
-
-    document.body.appendChild(form);
-    form.submit();
-    form.remove();
-    $("statusLine").textContent = `已打开PDF文件（${suffix}）。`;
+    await hydratePdfSnapshotImages(snapshot);
+    const resp = await fetch("/api/quote/calculate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(snapshot),
+    });
+    if (!resp.ok) {
+      const message = await resp.text();
+      throw new Error(`HTTP ${resp.status}${message ? `: ${message.trim()}` : ""}`);
+    }
+    const result = await resp.json();
+    const html = buildPdfHtml(snapshot, result, mode, lang);
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    printWindow.location.replace(blobUrl);
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    $("statusLine").textContent = `已生成PDF打印页（${suffix}），请选择“保存为PDF”。`;
   } catch (e) {
+    printWindow.close();
     $("statusLine").textContent = "PDF导出失败，请确认服务器可用。";
     alert("PDF导出失败: " + e.message);
   }

@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,7 +42,6 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/quote/calculate", s.handleQuoteCalculate)
 	mux.HandleFunc("/api/export", s.handleExport)
-	mux.HandleFunc("/api/export/pdf", s.handlePDFExport)
 	mux.HandleFunc("/api/export/markdown", s.handleMarkdownExport)
 	mux.HandleFunc("/api/save", s.handleSave)
 	mux.HandleFunc("/api/list", s.handleList)
@@ -357,74 +355,6 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to generate Excel", http.StatusInternalServerError)
 		log.Printf("excel export write failed project=%q error=%v", snap.Inputs.ProjectName, err)
 	}
-}
-
-func (s *Server) handlePDFExport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var snap quote.Snapshot
-	if err := decodeSnapshotRequest(r, &snap); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		log.Printf("pdf export rejected invalid_json=true error=%v", err)
-		return
-	}
-
-	mode := r.URL.Query().Get("mode")
-	lang := r.URL.Query().Get("lang")
-	content := quote.BuildPDF(&snap, mode, lang)
-	log.Printf("pdf export generated project=%q mode=%s lang=%s bytes=%d",
-		snap.Inputs.ProjectName, mode, lang, len(content))
-
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", contentDispositionInline(pdfExportFilename(snap.Inputs.ProjectName, mode, lang)))
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(content); err != nil {
-		log.Printf("pdf export write failed project=%q error=%v", snap.Inputs.ProjectName, err)
-	}
-}
-
-func decodeSnapshotRequest(r *http.Request, snap *quote.Snapshot) error {
-	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") || strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseForm(); err != nil {
-			return err
-		}
-		return json.Unmarshal([]byte(r.FormValue("snapshot")), snap)
-	}
-	return json.NewDecoder(r.Body).Decode(snap)
-}
-
-func contentDispositionInline(filename string) string {
-	return fmt.Sprintf("inline; filename=quotation.pdf; filename*=UTF-8''%s", url.PathEscape(filename))
-}
-
-func pdfExportFilename(projectName, mode, lang string) string {
-	base := strings.TrimSpace(projectName)
-	if base == "" {
-		base = "quotation"
-	}
-	suffix := "internal"
-	if mode == "customer" {
-		suffix = "customer"
-	}
-	if lang == "" {
-		lang = "zh"
-	}
-	return safeDownloadName(fmt.Sprintf("%s_%s_%s.pdf", base, suffix, lang))
-}
-
-func safeDownloadName(name string) string {
-	return strings.Map(func(r rune) rune {
-		switch r {
-		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
-			return '_'
-		default:
-			return r
-		}
-	}, name)
 }
 
 func (s *Server) hydrateCargoImagesForExport(snap *quote.Snapshot) {
