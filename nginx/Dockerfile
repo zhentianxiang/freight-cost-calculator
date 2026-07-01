@@ -1,4 +1,4 @@
-FROM nginx:alpine
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nginx:alpine
 
 # 复制 nginx 配置
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
