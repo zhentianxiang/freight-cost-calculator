@@ -13,7 +13,7 @@ func main() {
 	flag.Parse()
 
 	if *mode == "server" {
-		if err := httpapi.Start(":8081", "./data"); err != nil {
+		if err := httpapi.Start(":8080", "./data"); err != nil {
 			log.Fatal(err)
 		}
 		return

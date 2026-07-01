@@ -1,5 +1,5 @@
 # ── 阶段 1：构建 ──────────────────────────────────────────────────────────
-FROM golang:1.25-alpine AS builder
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/golang:1.25-alpine AS builder
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /build
 
@@ -12,12 +12,12 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o quote-service ./cmd/server
 
 # ── 阶段 2：运行 ──────────────────────────────────────────────────────────
-FROM alpine:3.21
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:3.21.3-linuxarm64
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
 # 只复制编译好的二进制，镜像体积极小
 COPY --from=builder /build/quote-service .
 
-EXPOSE 8081
+EXPOSE 8080
 ENTRYPOINT ["/app/quote-service"]
