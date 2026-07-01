@@ -1,6 +1,6 @@
 # ── 阶段 1：构建 ──────────────────────────────────────────────────────────
 FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/golang:1.25-alpine AS builder
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /build
 
 # 先复制 go.mod + go.sum 以利用 Docker 缓存
@@ -12,7 +12,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o quote-service ./cmd/server
 
 # ── 阶段 2：运行 ──────────────────────────────────────────────────────────
-FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:3.21.3-linuxarm64
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
