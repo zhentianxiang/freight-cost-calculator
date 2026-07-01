@@ -37,15 +37,21 @@ func CalculateSchemes(snap *Snapshot) (float64, []SummaryRow) {
 	}
 	importCosts := estimateImportCosts(snap.Inputs, goodsCost, freight)
 	totalCost := goodsCost + freight + portTotals.TotalRMB + importCosts.IncludedTotal
+	profitBase := totalCost
+	passThroughCost := 0.0
+	if !snap.Inputs.FreightProfitIncluded {
+		profitBase -= freight
+		passThroughCost = freight
+	}
 
-	// 最终报价(RMB) = 总成本 / (1 - 目标利润率%)
+	// 最终报价(RMB) = 参与利润的成本 / (1 - 目标利润率%) + 不参与利润的实报实销成本
 	profitRate := snap.Inputs.TargetProfit
 	divisor := 1 - profitRate/100
 	quoteRmb := 0.0
 	if divisor > 0.01 {
-		quoteRmb = totalCost / divisor
+		quoteRmb = profitBase/divisor + passThroughCost
 	} else {
-		quoteRmb = totalCost * (1 + profitRate/100)
+		quoteRmb = profitBase*(1+profitRate/100) + passThroughCost
 	}
 	quoteUsd := 0.0
 	if snap.Inputs.ExchangeRate > 0 {

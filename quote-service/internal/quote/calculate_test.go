@@ -47,6 +47,36 @@ func TestPortChargesAreIncludedInTotalCost(t *testing.T) {
 	}
 }
 
+func TestFreightCanBeExcludedFromTargetProfit(t *testing.T) {
+	snap := Snapshot{
+		Inputs: Inputs{
+			ExchangeRate:    7,
+			EurExchangeRate: 8,
+			OutputCurrency:  "USD",
+			TargetProfit:    20,
+		},
+		Cargo:   []CargoRow{{Qty: 1, UnitPrice: 1000}},
+		Freight: []FreightRow{{Item: "国内派送费", Amount: 200, Included: true}},
+	}
+
+	result := Calculate(&snap)
+	if got, want := result.Selected.QuoteRmb, 1450.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("quote without freight profit = %v, want %v", got, want)
+	}
+	if got, want := result.Selected.Profit, 250.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("profit without freight profit = %v, want %v", got, want)
+	}
+
+	snap.Inputs.FreightProfitIncluded = true
+	result = Calculate(&snap)
+	if got, want := result.Selected.QuoteRmb, 1500.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("quote with freight profit = %v, want %v", got, want)
+	}
+	if got, want := result.Selected.Profit, 300.0; math.Abs(got-want) > 0.001 {
+		t.Fatalf("profit with freight profit = %v, want %v", got, want)
+	}
+}
+
 func TestPortChargeCompositeMaxRule(t *testing.T) {
 	snap := Snapshot{
 		Inputs: Inputs{EurExchangeRate: 8},

@@ -321,7 +321,7 @@
           <div class="section-header">
             <div>
               <h2 class="section-title">其他费用</h2>
-              <span class="section-helper">用于填写不属于港口 RT 计费的杂项费用，直接计入最终采用总成本</span>
+              <span class="section-helper">用于填写国内派送、装卸等杂项费用；可选择是否参与目标利润</span>
             </div>
             <div class="actions">
               <button class="btn" id="addFreightBtn" type="button">新增费用</button>
@@ -332,6 +332,13 @@
               <option value="国内派送费"></option>
               <option value="装卸费用"></option>
             </datalist>
+            <label class="option-toggle freight-profit-toggle" for="freightProfitIncluded">
+              <input id="freightProfitIncluded" type="checkbox">
+              <span>
+                <strong>其他费用参与目标利润</strong>
+                <small>关闭时其他费用按实报实销直接加到报价中</small>
+              </span>
+            </label>
             <div class="table-wrap freight-scroll">
               <table id="freightTable">
                 <colgroup>

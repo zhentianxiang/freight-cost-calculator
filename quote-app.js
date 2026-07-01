@@ -271,6 +271,7 @@ function getInputs() {
     destinationClearance: cleanNum($("destinationClearance").value),
     destinationOther: cleanNum($("destinationOther").value),
     targetProfit: cleanNum($("targetProfit").value),
+    freightProfitIncluded: $("freightProfitIncluded").checked,
     selectedScheme: defaultScheme,
     notes: $("notes").value.trim()
   };
@@ -295,6 +296,7 @@ function getRawInputs() {
     destinationClearance: $("destinationClearance").value,
     destinationOther: $("destinationOther").value,
     targetProfit: $("targetProfit").value,
+    freightProfitIncluded: $("freightProfitIncluded").checked,
     selectedScheme: defaultScheme,
     notes: $("notes").value
   };
@@ -305,6 +307,10 @@ function applyInputs(inputs = {}) {
     if (!$(key)) return;
     if (key === "tradeTerm" && !supportedQuoteTerms.has(value)) {
       $(key).value = "CFR";
+      return;
+    }
+    if ($(key).type === "checkbox") {
+      $(key).checked = Boolean(value);
       return;
     }
     $(key).value = value;
@@ -677,7 +683,8 @@ async function renderSummary() {
   
   const currentMargin = pct(selected.margin);
   const currentMarkup = pct(selected.markup);
-  $("statusLine").textContent = `基于 ${result.inputs.targetProfit}% 利润率自动测算；净利率 ${currentMargin}，成本加成率 ${currentMarkup}`;
+  const freightProfitText = result.inputs.freightProfitIncluded ? "其他费用参与目标利润" : "其他费用实报实销，不参与目标利润";
+  $("statusLine").textContent = `基于 ${result.inputs.targetProfit}% 利润率自动测算；${freightProfitText}；净利率 ${currentMargin}，成本加成率 ${currentMarkup}`;
   $("termNote").textContent = getTermNote(result.inputs.tradeTerm);
 
   const tbody = $("summaryTable").querySelector("tbody");
@@ -907,6 +914,7 @@ function clearInputFields() {
   $("destinationClearance").value = "0";
   $("destinationOther").value = "0";
   $("targetProfit").value = "15";
+  $("freightProfitIncluded").checked = false;
   $("notes").value = "";
 }
 

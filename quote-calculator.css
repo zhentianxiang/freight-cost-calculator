@@ -246,6 +246,41 @@ h1 {
   gap: 6px;
 }
 
+.option-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: fit-content;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  cursor: pointer;
+}
+
+.option-toggle input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+}
+
+.option-toggle span {
+  display: grid;
+  gap: 2px;
+}
+
+.option-toggle strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.option-toggle small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .rate-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

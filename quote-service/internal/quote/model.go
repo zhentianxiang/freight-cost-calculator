@@ -1,25 +1,26 @@
 package quote
 
 type Inputs struct {
-	CompanyName          string  `json:"companyName"`
-	ProjectName          string  `json:"projectName"`
-	TradeTerm            string  `json:"tradeTerm"`
-	ContainerType        string  `json:"containerType"`
-	Destination          string  `json:"destination"`
-	DestinationCountry   string  `json:"destinationCountry"`
-	HSCode               string  `json:"hsCode"`
-	ValidUntil           string  `json:"validUntil"`
-	ExchangeRate         float64 `json:"exchangeRate"`
-	EurExchangeRate      float64 `json:"eurExchangeRate"`
-	OutputCurrency       string  `json:"outputCurrency"`
-	DutyRate             float64 `json:"dutyRate"`
-	ImportVatRate        float64 `json:"importVatRate"`
-	DestinationDelivery  float64 `json:"destinationDelivery"`
-	DestinationClearance float64 `json:"destinationClearance"`
-	DestinationOther     float64 `json:"destinationOther"`
-	TargetProfit         float64 `json:"targetProfit"`
-	SelectedScheme       string  `json:"selectedScheme"`
-	Notes                string  `json:"notes"`
+	CompanyName           string  `json:"companyName"`
+	ProjectName           string  `json:"projectName"`
+	TradeTerm             string  `json:"tradeTerm"`
+	ContainerType         string  `json:"containerType"`
+	Destination           string  `json:"destination"`
+	DestinationCountry    string  `json:"destinationCountry"`
+	HSCode                string  `json:"hsCode"`
+	ValidUntil            string  `json:"validUntil"`
+	ExchangeRate          float64 `json:"exchangeRate"`
+	EurExchangeRate       float64 `json:"eurExchangeRate"`
+	OutputCurrency        string  `json:"outputCurrency"`
+	DutyRate              float64 `json:"dutyRate"`
+	ImportVatRate         float64 `json:"importVatRate"`
+	DestinationDelivery   float64 `json:"destinationDelivery"`
+	DestinationClearance  float64 `json:"destinationClearance"`
+	DestinationOther      float64 `json:"destinationOther"`
+	TargetProfit          float64 `json:"targetProfit"`
+	FreightProfitIncluded bool    `json:"freightProfitIncluded"`
+	SelectedScheme        string  `json:"selectedScheme"`
+	Notes                 string  `json:"notes"`
 }
 
 type CargoRow struct {
